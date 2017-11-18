@@ -65,8 +65,8 @@ func (wb *Webhooks) SampleConfig() string {
   [inputs.webhooks.papertrail]
     path = "/papertrail"
 	
-   [inputs.webhooks.particle]
-      path = "/particle"
+  [inputs.webhooks.particle]
+    path = "/particle"
  `
 }
 

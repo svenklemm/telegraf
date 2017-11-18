@@ -195,6 +195,7 @@ configuration options.
 * [smart](./plugins/inputs/smart)
 * [snmp](./plugins/inputs/snmp)
 * [snmp_legacy](./plugins/inputs/snmp_legacy)
+* [solr](./plugins/inputs/solr)
 * [sql server](./plugins/inputs/sqlserver) (microsoft)
 * [teamspeak](./plugins/inputs/teamspeak)
 * [tomcat](./plugins/inputs/tomcat)
@@ -235,8 +236,9 @@ Telegraf can also collect metrics via the following service plugins:
   * [filestack](./plugins/inputs/webhooks/filestack)
   * [github](./plugins/inputs/webhooks/github)
   * [mandrill](./plugins/inputs/webhooks/mandrill)
-  * [rollbar](./plugins/inputs/webhooks/rollbar)
   * [papertrail](./plugins/inputs/webhooks/papertrail)
+  * [particle](./plugins/inputs/webhooks/particle)
+  * [rollbar](./plugins/inputs/webhooks/rollbar)
 * [zipkin](./plugins/inputs/zipkin)
 
 Telegraf is able to parse the following input data formats into metrics, these
@@ -266,6 +268,7 @@ formats may be used with input plugins supporting the `data_format` option:
 * [amqp](./plugins/outputs/amqp) (rabbitmq)
 * [aws kinesis](./plugins/outputs/kinesis)
 * [aws cloudwatch](./plugins/outputs/cloudwatch)
+* [cratedb](./plugins/outputs/cratedb)
 * [datadog](./plugins/outputs/datadog)
 * [discard](./plugins/outputs/discard)
 * [elasticsearch](./plugins/outputs/elasticsearch)
