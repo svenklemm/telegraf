@@ -16,6 +16,16 @@
   In environments where TCP connections are terminated the `max_lifetime`
   setting should be set less than the collection `interval` to prevent errors.
 
+- The `sqlserver` input plugin has a new query and data model that can be enabled
+  by setting `query_version = 2`.  It is encouraged to migrate to the new
+  model when possible as the old version is deprectated and will be removed in
+  a future version.
+
+### New Plugins
+
+- [ipset](./plugins/inputs/ipset/README.md) - Thanks to @sajoupa
+- [nats](./plugins/inputs/nats/README.md) - Thanks to @mjs & @levex
+
 ### Features
 
 - [#3551](https://github.com/influxdata/telegraf/pull/3551): Add health status mapping from string to int in elasticsearch input.
@@ -30,12 +40,27 @@
 - [#2846](https://github.com/influxdata/telegraf/pull/2846): Add support for dropwizard input format.
 - [#3666](https://github.com/influxdata/telegraf/pull/3666): Add container health metrics to docker input.
 - [#3687](https://github.com/influxdata/telegraf/pull/3687): Add support for using globs in devices list of diskio input plugin.
+- [#2754](https://github.com/influxdata/telegraf/pull/2754): Allow running as console application on Windows.
+- [#3703](https://github.com/influxdata/telegraf/pull/3703): Add listener counts and node running status to rabbitmq input.
+- [#3674](https://github.com/influxdata/telegraf/pull/3674): Add NATS Monitoring Input Plugin.
+- [#3702](https://github.com/influxdata/telegraf/pull/3702): Add ability to select which queues will be gathered in rabbitmq input.
+- [#3726](https://github.com/influxdata/telegraf/pull/3726): Add support for setting bsd source address to the ping input.
+- [#3346](https://github.com/influxdata/telegraf/pull/3346): Add Ipset input plugin.
+- [#3719](https://github.com/influxdata/telegraf/pull/3719): Add TLS and HTTP basic auth to prometheus_client output.
+- [#3618](https://github.com/influxdata/telegraf/pull/3618): Add new sqlserver output data model.
+- [#3559](https://github.com/influxdata/telegraf/pull/3559): Add native Go method for finding pids to procstat.
 
 ### Bugfixes
 
 - [#1896](https://github.com/influxdata/telegraf/issues/1896): Fix various mysql data type conversions.
 
-## v1.5.2 [unreleased]
+## v1.5.3 [unreleased]
+
+### Bugfixes
+
+- [#3729](https://github.com/influxdata/telegraf/issues/3729): Set path to / if HOST_MOUNT_PREFIX matches full path.
+
+## v1.5.2 [2018-01-30]
 
 ### Bugfixes
 
@@ -46,8 +71,10 @@
 - [#3629](https://github.com/influxdata/telegraf/issues/3629): Fix a potential deadlock when using aggregators.
 - [#3697](https://github.com/influxdata/telegraf/issues/3697): Limit wait time for writes in mqtt output.
 - [#3698](https://github.com/influxdata/telegraf/issues/3698): Revert change in graphite output where dot in field key was replaced by underscore.
+- [#3710](https://github.com/influxdata/telegraf/issues/3710): Add timeout to wavefront output write.
+- [#3725](https://github.com/influxdata/telegraf/issues/3725): Exclude master_replid fields from redis input.
 
-## v1.5.1 [2017-01-10]
+## v1.5.1 [2018-01-10]
 
 ### Bugfixes
 
