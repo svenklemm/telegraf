@@ -82,6 +82,7 @@ func (ac *accumulator) AddHistogram(
 }
 
 func (ac *accumulator) AddMetric(m telegraf.Metric) {
+	m.SetTime(m.Time().Round(ac.precision))
 	if m := ac.maker.MakeMetric(m); m != nil {
 		ac.metrics <- m
 	}
@@ -113,21 +114,8 @@ func (ac *accumulator) AddError(err error) {
 	log.Printf("E! [%s]: Error in plugin: %v", ac.maker.Name(), err)
 }
 
-func (ac *accumulator) SetPrecision(precision, interval time.Duration) {
-	if precision > 0 {
-		ac.precision = precision
-		return
-	}
-	switch {
-	case interval >= time.Second:
-		ac.precision = time.Second
-	case interval >= time.Millisecond:
-		ac.precision = time.Millisecond
-	case interval >= time.Microsecond:
-		ac.precision = time.Microsecond
-	default:
-		ac.precision = time.Nanosecond
-	}
+func (ac *accumulator) SetPrecision(precision time.Duration) {
+	ac.precision = precision
 }
 
 func (ac *accumulator) getTime(t []time.Time) time.Time {
