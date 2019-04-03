@@ -20,7 +20,7 @@ type Postgresql struct {
 	FieldsAsJsonb     bool
 	TableTemplate     string
 	TagTableSuffix    string
-	Tables            map[string]bool
+	tables            *tableKeeper
 }
 
 func init() {
@@ -43,8 +43,7 @@ func (p *Postgresql) Connect() error {
 		return err
 	}
 	p.db = db
-	p.Tables = make(map[string]bool)
-
+	p.tables = newTableKeeper(db)
 	return nil
 }
 
@@ -111,14 +110,14 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 		tablename := metric.Name()
 
 		// create table if needed
-		if p.Tables[tablename] == false && p.tableExists(tablename) == false {
+		if p.tables.tableExists(p.Schema, tablename) == false {
 			createStmt := p.generateCreateTable(metric)
 			_, err := p.db.Exec(createStmt)
 			if err != nil {
 				log.Printf("E! Creating table failed: statement: %v, error: %v", createStmt, err)
 				return err
 			}
-			p.Tables[tablename] = true
+			p.tables.addTable(tablename)
 		}
 
 		columns := []string{"time"}
