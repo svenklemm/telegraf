@@ -2,10 +2,8 @@ package postgresql
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"sort"
-	"strings"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs"
@@ -101,23 +99,19 @@ func (p *Postgresql) SampleConfig() string { return sampleConfig }
 func (p *Postgresql) Description() string  { return "Send metrics to PostgreSQL" }
 
 func (p *Postgresql) Write(metrics []telegraf.Metric) error {
-	batches := make(map[string][]interface{})
-	params := make(map[string][]string)
-	colmap := make(map[string][]string)
-	tabmap := make(map[string]string)
-
+	toInsert := make(map[string][]*colsAndValues)
 	for _, metric := range metrics {
 		tablename := metric.Name()
 
 		// create table if needed
-		if p.tables.tableExists(p.Schema, tablename) == false {
+		if p.tables.exists(p.Schema, tablename) == false {
 			createStmt := p.generateCreateTable(metric)
 			_, err := p.db.Exec(createStmt)
 			if err != nil {
 				log.Printf("E! Creating table failed: statement: %v, error: %v", createStmt, err)
 				return err
 			}
-			p.tables.addTable(tablename)
+			p.tables.add(tablename)
 		}
 
 		columns := []string{"time"}
@@ -180,77 +174,47 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 			}
 		}
 
-		var tableAndCols string
-		var placeholder, quotedColumns []string
-		for _, column := range columns {
-			quotedColumns = append(quotedColumns, quoteIdent(column))
+		newValues := &colsAndValues{
+			cols: columns,
+			vals: values,
 		}
-		tableAndCols = fmt.Sprintf("%s(%s)", p.fullTableName(tablename), strings.Join(quotedColumns, ","))
-		batches[tableAndCols] = append(batches[tableAndCols], values...)
-		for i := range columns {
-			i += len(params[tableAndCols]) * len(columns)
-			placeholder = append(placeholder, fmt.Sprintf("$%d", i+1))
-		}
-		params[tableAndCols] = append(params[tableAndCols], strings.Join(placeholder, ","))
-		colmap[tableAndCols] = columns
-		tabmap[tableAndCols] = tablename
+		toInsert[tablename] = append(toInsert[tablename], newValues)
 	}
 
-	return p.insertBatches(batches, tabmap, colmap, params)
+	return p.insertBatches(toInsert)
 }
 
-func (p *Postgresql) insertBatches(
-	batches map[string][]interface{},
-	tabmap map[string]string,
-	colmap, params map[string][]string) error {
-	for tableAndCols, values := range batches {
-		sql := fmt.Sprintf("INSERT INTO %s VALUES (%s)", tableAndCols, strings.Join(params[tableAndCols], "),("))
-		_, err := p.db.Exec(sql, values...)
-		if err != nil {
-			// check if insert error was caused by column mismatch
-			retry := false
-			if p.FieldsAsJsonb == false {
-				log.Printf("E! Error during insert: %v", err)
-				tablename := tabmap[tableAndCols]
-				columns := colmap[tableAndCols]
-				var quotedColumns []string
-				for _, column := range columns {
-					quotedColumns = append(quotedColumns, quoteLiteral(column))
-				}
-				query := "SELECT c FROM unnest(array[%s]) AS c WHERE NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE column_name=c AND table_schema=$1 AND table_name=$2)"
-				query = fmt.Sprintf(query, strings.Join(quotedColumns, ","))
-				result, err := p.db.Query(query, p.Schema, tablename)
-				if err != nil {
-					return err
-				}
-				defer result.Close()
+type colsAndValues struct {
+	cols []string
+	vals []interface{}
+}
 
-				// some columns are missing
-				var column, datatype string
-				for result.Next() {
-					err := result.Scan(&column)
-					if err != nil {
-						log.Println(err)
-					}
-					for i, name := range columns {
-						if name == column {
-							datatype = deriveDatatype(values[i])
-						}
-					}
-					query := "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;"
-					_, err = p.db.Exec(fmt.Sprintf(query, p.fullTableName(tablename), quoteIdent(column), datatype))
-					if err != nil {
-						return err
-					}
-					retry = true
-				}
+func (p *Postgresql) insertBatches(batches map[string][]*colsAndValues) error {
+	for tableName, colsAndValues := range batches {
+		for _, row := range colsAndValues {
+			sql := p.generateInsert(tableName, row.cols)
+			_, err := p.db.Exec(sql, row.vals...)
+			if err == nil {
+				continue
+			}
+
+			log.Printf("E! Error during insert: %v", err)
+			// check if insert error was caused by column mismatch
+			if p.FieldsAsJsonb {
+				return err
+			}
+
+			retry := false
+			retry, err = p.addMissingColumns(tableName, row.cols, row.vals)
+			if err != nil {
+				return err
 			}
 
 			// We added some columns and insert might work now. Try again immediately to
 			// avoid long lead time in getting metrics when there are several columns missing
 			// from the original create statement and they get added in small drops.
 			if retry {
-				_, err = p.db.Exec(sql, values...)
+				_, err = p.db.Exec(sql, row.vals...)
 			}
 			if err != nil {
 				return err

@@ -10,9 +10,19 @@ import (
 
 const (
 	selectTagIDTemplate    = "SELECT tag_id FROM %s WHERE %s"
-	missingColumnsTemplate = "SELECT c FROM unnest(array[%s]) AS c WHERE NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE column_name=c AND table_schema=$1 AND table_name=$2)"
-	addColumnTemplate      = "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;"
-	tagDataType            = "TEXT"
+	missingColumnsTemplate = "WITH available AS (" +
+		"  SELECT column_name as c" +
+		"  FROM information_schema.columns" +
+		"  WHERE table_schema = $1 and table_name = $2" +
+		"), required AS (" +
+		"       SELECT c" +
+		"       FROM unnest(array [%s]) AS c" +
+		"     )" +
+		"SELECT required.c, available.c IS NULL" +
+		"FROM required" +
+		"LEFT JOIN available ON required.c = available.c;"
+
+	addColumnTemplate = "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;"
 )
 
 func (p *Postgresql) getTagID(metric telegraf.Metric) (int, error) {
@@ -64,32 +74,10 @@ func (p *Postgresql) getTagID(metric telegraf.Metric) (int, error) {
 
 	// check for missing columns
 	log.Printf("E! Error during insert: %v", err)
-	var quotedColumns = make([]string, len(whereColumns))
-	for i, column := range whereColumns {
-		quotedColumns[i] = quoteLiteral(column)
-	}
-	missingColumnsQuery := fmt.Sprintf(missingColumnsTemplate, strings.Join(quotedColumns, ","))
-	result, err := p.db.Query(missingColumnsQuery, p.Schema, tagsTableName)
+	retry, err := p.addMissingColumns(tagsTableName, whereColumns, whereValues)
 	if err != nil {
+		// missing coulmns not properly added
 		return tagID, err
-	}
-	defer result.Close()
-
-	// some columns are missing
-	retry := false
-	var missingColumn string
-	for result.Next() {
-		err := result.Scan(&missingColumn)
-		if err != nil {
-			log.Println(err)
-		}
-
-		addColumnQuery := fmt.Sprintf(addColumnTemplate, tagsTableFullName, quoteIdent(missingColumn), tagDataType)
-		_, err = p.db.Exec(addColumnQuery)
-		if err != nil {
-			return tagID, err
-		}
-		retry = true
 	}
 
 	// We added some columns and insert might work now. Try again immediately to

@@ -20,7 +20,7 @@ func newTableKeeper(db *sql.DB) *tableKeeper {
 	}
 }
 
-func (t *tableKeeper) tableExists(schema, tableName string) bool {
+func (t *tableKeeper) exists(schema, tableName string) bool {
 	if _, ok := t.Tables[tableName]; ok {
 		return true
 	}
@@ -37,6 +37,6 @@ func (t *tableKeeper) tableExists(schema, tableName string) bool {
 	return false
 }
 
-func (t *tableKeeper) addTable(tableName string) {
+func (t *tableKeeper) add(tableName string) {
 	t.Tables[tableName] = true
 }
