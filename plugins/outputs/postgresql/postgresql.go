@@ -1,7 +1,6 @@
 package postgresql
 
 import (
-	"database/sql"
 	"log"
 	"sort"
 
@@ -9,8 +8,13 @@ import (
 	"github.com/influxdata/telegraf/plugins/outputs"
 )
 
+const (
+	tagsJSONColumn   = "tags"
+	fieldsJSONColumn = "fields"
+)
+
 type Postgresql struct {
-	db                *sql.DB
+	db                dbWrapper
 	Address           string
 	Schema            string
 	TagsAsForeignkeys bool
@@ -18,7 +22,7 @@ type Postgresql struct {
 	FieldsAsJsonb     bool
 	TableTemplate     string
 	TagTableSuffix    string
-	tables            *tableKeeper
+	tables            tableKeeper
 }
 
 func init() {
@@ -35,16 +39,18 @@ func newPostgresql() *Postgresql {
 	}
 }
 
+// Connect establishes a connection to the target database and prepares the cache
 func (p *Postgresql) Connect() error {
-	db, err := sql.Open("pgx", p.Address)
+	db, err := newDbWrapper(p.Address)
 	if err != nil {
 		return err
 	}
-	p.db = db
+
 	p.tables = newTableKeeper(db)
 	return nil
 }
 
+// Close closes the connection to the database
 func (p *Postgresql) Close() error {
 	return p.db.Close()
 }
@@ -124,7 +130,7 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 				if err != nil {
 					return err
 				}
-				columns = append(columns, "tag_id")
+				columns = append(columns, tagIDColumn)
 				values = append(values, tagID)
 			} else {
 				// tags in measurement table
@@ -135,7 +141,7 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 					}
 
 					if d != nil {
-						columns = append(columns, "tags")
+						columns = append(columns, tagsJSONColumn)
 						values = append(values, d)
 					}
 				} else {
@@ -159,7 +165,7 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 				return err
 			}
 
-			columns = append(columns, "fields")
+			columns = append(columns, fieldsJSONColumn)
 			values = append(values, d)
 		} else {
 			var keys []string
@@ -189,6 +195,10 @@ type colsAndValues struct {
 	vals []interface{}
 }
 
+// insertBatches takes batches od data to be inserted. The batches are mapped
+// by the target table, and each batch contains the columns and values for those
+// columns that will generate the INSERT statement.
+// On column missmatch an attempt is made to create the column and try to reinsert.
 func (p *Postgresql) insertBatches(batches map[string][]*colsAndValues) error {
 	for tableName, colsAndValues := range batches {
 		for _, row := range colsAndValues {

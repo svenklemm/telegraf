@@ -10,17 +10,9 @@ import (
 
 const (
 	selectTagIDTemplate    = "SELECT tag_id FROM %s WHERE %s"
-	missingColumnsTemplate = "WITH available AS (" +
-		"  SELECT column_name as c" +
-		"  FROM information_schema.columns" +
-		"  WHERE table_schema = $1 and table_name = $2" +
-		"), required AS (" +
-		"       SELECT c" +
-		"       FROM unnest(array [%s]) AS c" +
-		"     )" +
-		"SELECT required.c, available.c IS NULL" +
-		"FROM required" +
-		"LEFT JOIN available ON required.c = available.c;"
+	missingColumnsTemplate = "WITH available AS (SELECT column_name as c FROM information_schema.columns WHERE table_schema = $1 and table_name = $2)," +
+		"required AS (SELECT c FROM unnest(array [%s]) AS c) " +
+		"SELECT required.c, available.c IS NULL FROM required LEFT JOIN available ON required.c = available.c;"
 
 	addColumnTemplate = "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;"
 )

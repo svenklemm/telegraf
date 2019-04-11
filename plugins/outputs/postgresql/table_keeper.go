@@ -1,7 +1,6 @@
 package postgresql
 
 import (
-	"database/sql"
 	"log"
 )
 
@@ -9,18 +8,24 @@ const (
 	tableExistsTemplate = "SELECT tablename FROM pg_tables WHERE tablename = $1 AND schemaname = $2;"
 )
 
-type tableKeeper struct {
-	Tables map[string]bool
-	db     *sql.DB
+type tableKeeper interface {
+	exists(schema, tableName string) bool
+	add(tableName string)
 }
 
-func newTableKeeper(db *sql.DB) *tableKeeper {
-	return &tableKeeper{
+type defTableKeeper struct {
+	Tables map[string]bool
+	db     dbWrapper
+}
+
+func newTableKeeper(db dbWrapper) tableKeeper {
+	return &defTableKeeper{
 		Tables: make(map[string]bool),
+		db:     db,
 	}
 }
 
-func (t *tableKeeper) exists(schema, tableName string) bool {
+func (t *defTableKeeper) exists(schema, tableName string) bool {
 	if _, ok := t.Tables[tableName]; ok {
 		return true
 	}
@@ -37,6 +42,6 @@ func (t *tableKeeper) exists(schema, tableName string) bool {
 	return false
 }
 
-func (t *tableKeeper) add(tableName string) {
+func (t *defTableKeeper) add(tableName string) {
 	t.Tables[tableName] = true
 }

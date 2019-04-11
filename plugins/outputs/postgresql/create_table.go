@@ -7,6 +7,11 @@ import (
 	"github.com/influxdata/telegraf"
 )
 
+const (
+	tagIDColumn             = "tag_id"
+	createTagsTableTemplate = "CREATE TABLE IF NOT EXISTS %s(tag_id serial primary key,%s,UNIQUE(%s))"
+)
+
 func (p *Postgresql) generateCreateTable(metric telegraf.Metric) string {
 	var columns []string
 	var pk []string
@@ -32,8 +37,8 @@ func (p *Postgresql) generateCreateTable(metric telegraf.Metric) string {
 					tagColumndefs = append(tagColumndefs, fmt.Sprintf("%s text", quoteIdent(column)))
 				}
 			}
-			table := quoteIdent(metric.Name() + p.TagTableSuffix)
-			sql = append(sql, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s(tag_id serial primary key,%s,UNIQUE(%s))", table, strings.Join(tagColumndefs, ","), strings.Join(tagColumns, ",")))
+			table := p.fullTableName(metric.Name() + p.TagTableSuffix)
+			sql = append(sql, fmt.Sprintf(createTagsTableTemplate, table, strings.Join(tagColumndefs, ","), strings.Join(tagColumns, ",")))
 		} else {
 			// tags in measurement table
 			if p.TagsAsJsonb {
