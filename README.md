@@ -16,6 +16,10 @@ Telegraf is plugin-driven and has the concept of 4 distinct plugin types:
 New plugins are designed to be easy to contribute, we'll eagerly accept pull
 requests and will manage the set of plugins that Telegraf supports.
 
+## Try in Browser :rocket:
+
+You can try Telegraf right in your browser in the [Telegraf playground](https://rootnroll.com/d/telegraf/).
+
 ## Contributing
 
 There are many ways to contribute:
@@ -139,6 +143,7 @@ For documentation on the latest development code see the [documentation index][d
 * [aws cloudwatch](./plugins/inputs/cloudwatch)
 * [bcache](./plugins/inputs/bcache)
 * [beanstalkd](./plugins/inputs/beanstalkd)
+* [bind](./plugins/inputs/bind)
 * [bond](./plugins/inputs/bond)
 * [burrow](./plugins/inputs/burrow)
 * [cassandra](./plugins/inputs/cassandra) (deprecated, use [jolokia2](./plugins/inputs/jolokia2))
@@ -168,6 +173,7 @@ For documentation on the latest development code see the [documentation index][d
 * [filestat](./plugins/inputs/filestat)
 * [filecount](./plugins/inputs/filecount)
 * [fluentd](./plugins/inputs/fluentd)
+* [github](./plugins/inputs/github)
 * [graylog](./plugins/inputs/graylog)
 * [haproxy](./plugins/inputs/haproxy)
 * [hddtemp](./plugins/inputs/hddtemp)
@@ -238,6 +244,7 @@ For documentation on the latest development code see the [documentation index][d
 * [postgresql_extensible](./plugins/inputs/postgresql_extensible)
 * [postgresql](./plugins/inputs/postgresql)
 * [powerdns](./plugins/inputs/powerdns)
+* [powerdns_recursor](./plugins/inputs/powerdns_recursor)
 * [processes](./plugins/inputs/processes)
 * [procstat](./plugins/inputs/procstat)
 * [prometheus](./plugins/inputs/prometheus) (can be used for [Caddy server](./plugins/inputs/prometheus/README.md#usage-for-caddy-http-server))
@@ -309,6 +316,7 @@ For documentation on the latest development code see the [documentation index][d
 - [ServiceNow](/plugins/serializers/nowmetric)
 - [SplunkMetric](/plugins/serializers/splunkmetric)
 - [Carbon2](/plugins/serializers/carbon2)
+- [Wavefront](/plugins/serializers/wavefront)
 
 ## Processor Plugins
 
@@ -332,7 +340,7 @@ For documentation on the latest development code see the [documentation index][d
 ## Output Plugins
 
 * [influxdb](./plugins/outputs/influxdb) (InfluxDB 1.x)
-* [influxdb_v2](./plugins/outputs/influxdb_v2) ([InfluxDB 2.x](https://github.com/influxdata/platform))
+* [influxdb_v2](./plugins/outputs/influxdb_v2) ([InfluxDB 2.x](https://github.com/influxdata/influxdb))
 * [amon](./plugins/outputs/amon)
 * [amqp](./plugins/outputs/amqp) (rabbitmq)
 * [application_insights](./plugins/outputs/application_insights)
@@ -360,6 +368,7 @@ For documentation on the latest development code see the [documentation index][d
 * [riemann_legacy](./plugins/outputs/riemann_legacy)
 * [socket_writer](./plugins/outputs/socket_writer)
 * [stackdriver](./plugins/outputs/stackdriver)
+* [syslog](./plugins/outputs/syslog)
 * [tcp](./plugins/outputs/socket_writer)
 * [udp](./plugins/outputs/socket_writer)
 * [wavefront](./plugins/outputs/wavefront)
