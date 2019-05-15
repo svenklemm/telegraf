@@ -45,7 +45,7 @@ func (p *Postgresql) Connect() error {
 	if err != nil {
 		return err
 	}
-
+	p.db = db
 	p.tables = newTableKeeper(db)
 	return nil
 }

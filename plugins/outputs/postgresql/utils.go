@@ -21,9 +21,11 @@ func buildJsonb(data map[string]interface{}) ([]byte, error) {
 	if len(data) > 0 {
 		d, err := json.Marshal(data)
 		if err != nil {
-			return d, err
+			return nil, err
 		}
+		return d, nil
 	}
+
 	return nil, nil
 }
 

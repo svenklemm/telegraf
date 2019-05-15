@@ -8,6 +8,7 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/metric"
+	_ "github.com/jackc/pgx/stdlib"
 	"github.com/stretchr/testify/assert"
 )
 

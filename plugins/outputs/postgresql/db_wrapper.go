@@ -1,6 +1,10 @@
 package postgresql
 
-import "database/sql"
+import (
+	"database/sql"
+	// pgx driver for sql connections
+	_ "github.com/jackc/pgx/stdlib"
+)
 
 type dbWrapper interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
