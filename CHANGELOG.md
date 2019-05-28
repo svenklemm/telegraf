@@ -8,8 +8,13 @@
 #### New Inputs
 
 - [bind](/plugins/inputs/bind/README.md) - Contributed by @dswarbrick & @danielllek
+- [ecs](/plugins/inputs/ecs/README.md) - Contributed by @rbtr
 - [github](/plugins/inputs/github/README.md) - Contributed by @influxdata
 - [powerdns_recursor](/plugins/inputs/powerdns_recursor/README.md) - Contributed by @dupondje
+
+#### New Aggregators
+
+- [final](/plugins/aggregators/final/README.md) - Contributed by @oplehto
 
 #### New Outputs
 
@@ -41,6 +46,13 @@
 - [#5778](https://github.com/influxdata/telegraf/pull/5778): Add support for log rotation.
 - [#5765](https://github.com/influxdata/telegraf/pull/5765): Support more drive types in smart input.
 - [#5829](https://github.com/influxdata/telegraf/pull/5829): Add support for HTTP basic auth to solr input.
+- [#5791](https://github.com/influxdata/telegraf/pull/5791): Add support for datadog events to statsd input.
+- [#5817](https://github.com/influxdata/telegraf/pull/5817): Allow devices option to match against devlinks.
+- [#5855](https://github.com/influxdata/telegraf/pull/5855): Support tags in enum processor.
+- [#5830](https://github.com/influxdata/telegraf/pull/5830): Add support for gzip compression to amqp plugins.
+- [#5831](https://github.com/influxdata/telegraf/pull/5831): Support passive queue declaration in amqp_consumer.
+- [#5901](https://github.com/influxdata/telegraf/pull/5901): Set user agent in stackdriver output.
+- [#5885](https://github.com/influxdata/telegraf/pull/5885): Extend metrics collected from Nvidia GPUs.
 
 #### Bugfixes
 
@@ -53,8 +65,13 @@
 - [#5455](https://github.com/influxdata/telegraf/issues/5455): Fix unsupported pkt type error in pgbouncer.
 - [#5771](https://github.com/influxdata/telegraf/pull/5771): Fix only one job per storage target reported in lustre2 input.
 - [#5796](https://github.com/influxdata/telegraf/issues/5796): Set default timeout of 5s in fibaro input.
+- [#5835](https://github.com/influxdata/telegraf/issues/5835): Fix docker input does not parse image name correctly.
+- [#5661](https://github.com/influxdata/telegraf/issues/5661): Fix direct exchange routing key in amqp output.
+- [#5819](https://github.com/influxdata/telegraf/issues/5819): Fix scale set resource id with azure_monitor output.
+- [#5883](https://github.com/influxdata/telegraf/issues/5883): Skip invalid power times in apex_neptune input.
+- [#3485](https://github.com/influxdata/telegraf/issues/3485): Fix sqlserver connection closing on error.
 
-## v1.10.4 [unreleased]
+## v1.10.4 [2019-05-14]
 
 #### Bugfixes
 
@@ -65,6 +82,8 @@
 - [#5619](https://github.com/influxdata/telegraf/issues/5619): Fix interval estimation in vsphere input.
 - [#5782](https://github.com/influxdata/telegraf/pull/5782): Skip lines with missing refid in ntpq input.
 - [#5755](https://github.com/influxdata/telegraf/issues/5755): Add support for hex values to ipmi_sensor input.
+- [#5824](https://github.com/influxdata/telegraf/issues/5824): Fix parse of unix timestamp with more than ns precision.
+- [#5836](https://github.com/influxdata/telegraf/issues/5836): Restore field name case in interrupts input.
 
 ## v1.10.3 [2019-04-16]
 

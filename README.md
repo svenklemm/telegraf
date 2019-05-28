@@ -13,8 +13,8 @@ Telegraf is plugin-driven and has the concept of 4 distinct plugin types:
 3. [Aggregator Plugins](#aggregator-plugins) create aggregate metrics (e.g. mean, min, max, quantiles, etc.)
 4. [Output Plugins](#output-plugins) write metrics to various destinations
 
-New plugins are designed to be easy to contribute, we'll eagerly accept pull
-requests and will manage the set of plugins that Telegraf supports.
+New plugins are designed to be easy to contribute, pull requests are welcomed
+and we work to incorporate as many pull requests as possible.
 
 ## Try in Browser :rocket:
 
@@ -165,6 +165,7 @@ For documentation on the latest development code see the [documentation index][d
 * [dns query time](./plugins/inputs/dns_query)
 * [docker](./plugins/inputs/docker)
 * [dovecot](./plugins/inputs/dovecot)
+* [ecs](./plugins/inputs/ecs) (Amazon Elastic Container Service, Fargate)
 * [elasticsearch](./plugins/inputs/elasticsearch)
 * [exec](./plugins/inputs/exec) (generic executable plugin, support JSON, influx, graphite and nagios)
 * [fail2ban](./plugins/inputs/fail2ban)
@@ -333,8 +334,9 @@ For documentation on the latest development code see the [documentation index][d
 ## Aggregator Plugins
 
 * [basicstats](./plugins/aggregators/basicstats)
-* [minmax](./plugins/aggregators/minmax)
+* [final](./plugins/aggregators/final)
 * [histogram](./plugins/aggregators/histogram)
+* [minmax](./plugins/aggregators/minmax)
 * [valuecounter](./plugins/aggregators/valuecounter)
 
 ## Output Plugins
