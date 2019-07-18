@@ -31,6 +31,8 @@ func (m *mockDb) Close() error {
 	return nil
 }
 
+func (m *mockDb) IsAlive() bool { return true }
+
 func TestNewManager(t *testing.T) {
 	db := &mockDb{}
 	res := NewManager(db, "schema", "table template").(*defTableManager)
@@ -129,7 +131,7 @@ func TestCreateTable(t *testing.T) {
 				db:            tc.db,
 				tableTemplate: tc.template,
 			}
-			got := manager.CreateTable(tc.inT, tc.inCD)
+			got := manager.CreateTable(tc.inT, tc.inCD, false)
 			assert.Equal(t, tc.out, got)
 			if tc.out == nil {
 				assert.True(t, manager.Tables[tc.inT])

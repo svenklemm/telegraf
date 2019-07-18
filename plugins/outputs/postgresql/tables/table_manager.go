@@ -6,11 +6,13 @@ import (
 	"log"
 	"strings"
 
+	"github.com/influxdata/telegraf/plugins/outputs/postgresql/columns"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/db"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 )
 
 const (
+	tagTableSQLTemplate        = `CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS}, PRIMARY KEY("` + columns.TagIDColumnName + `"))`
 	addColumnTemplate          = "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;"
 	tableExistsTemplate        = "SELECT tablename FROM pg_tables WHERE tablename = $1 AND schemaname = $2;"
 	findColumnPresenceTemplate = "WITH available AS (SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = $1 and table_name = $2)," +
@@ -29,7 +31,7 @@ type Manager interface {
 	// Exists checks if a table with the given name already is present in the DB.
 	Exists(tableName string) bool
 	// Creates a table in the database with the column names and types specified in 'colDetails'
-	CreateTable(tableName string, colDetails *utils.TargetColumns) error
+	CreateTable(tableName string, colDetails *utils.TargetColumns, tagTable bool) error
 	// This function queries a table in the DB if the required columns in 'colDetails' are present and what is their
 	// data type. For existing columns it checks if the data type in the DB can safely hold the data from the metrics.
 	// It returns:
@@ -41,6 +43,7 @@ type Manager interface {
 	// From the column details (colDetails) of a given measurement, 'columnIndices' specifies which are missing in the DB.
 	// this function will add the new columns with the required data type.
 	AddColumnsToTable(tableName string, columnIndices []int, colDetails *utils.TargetColumns) error
+	SetConnection(db db.Wrapper)
 }
 
 type defTableManager struct {
@@ -59,6 +62,13 @@ func NewManager(db db.Wrapper, schema, tableTemplate string) Manager {
 		tableTemplate: tableTemplate,
 		schema:        schema,
 	}
+}
+
+// SetConnection to db, used only when previous was killed or restarted.
+// It will also clear the local cache of which table exists.
+func (t *defTableManager) SetConnection(db db.Wrapper) {
+	t.db = db
+	t.Tables = make(map[string]bool)
 }
 
 // Exists checks if a table with the given name already is present in the DB.
@@ -82,8 +92,13 @@ func (t *defTableManager) Exists(tableName string) bool {
 }
 
 // Creates a table in the database with the column names and types specified in 'colDetails'
-func (t *defTableManager) CreateTable(tableName string, colDetails *utils.TargetColumns) error {
-	sql := t.generateCreateTableSQL(tableName, colDetails)
+func (t *defTableManager) CreateTable(tableName string, colDetails *utils.TargetColumns, tagsTable bool) error {
+	var sql string
+	if tagsTable {
+		sql = t.generateCreateTagTableSQL(tableName, colDetails)
+	} else {
+		sql = t.generateCreateTableSQL(tableName, colDetails)
+	}
 	if _, err := t.db.Exec(sql); err != nil {
 		log.Printf("E! Couldn't create table: %s\nSQL: %s\n%v", tableName, sql, err)
 		return err
@@ -159,6 +174,23 @@ func (t *defTableManager) generateCreateTableSQL(tableName string, colDetails *u
 	query = strings.Replace(query, "{TABLELITERAL}", utils.QuoteLiteral(fullTableName), -1)
 	query = strings.Replace(query, "{COLUMNS}", strings.Join(colDefs, ","), -1)
 	query = strings.Replace(query, "{KEY_COLUMNS}", strings.Join(pk, ","), -1)
+
+	return query
+}
+
+func (t *defTableManager) generateCreateTagTableSQL(tableName string, colDetails *utils.TargetColumns) string {
+	colDefs := make([]string, len(colDetails.Names))
+	pk := []string{}
+	for colIndex, colName := range colDetails.Names {
+		colDefs[colIndex] = utils.QuoteIdent(colName) + " " + string(colDetails.DataTypes[colIndex])
+		if colDetails.Roles[colIndex] != utils.FieldColType {
+			pk = append(pk, colName)
+		}
+	}
+
+	fullTableName := utils.FullTableName(t.schema, tableName).Sanitize()
+	query := strings.Replace(tagTableSQLTemplate, "{TABLE}", fullTableName, -1)
+	query = strings.Replace(query, "{COLUMNS}", strings.Join(colDefs, ","), -1)
 
 	return query
 }
