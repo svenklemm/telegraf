@@ -2,6 +2,7 @@ package tables
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -23,6 +24,10 @@ const (
 type columnInDbDef struct {
 	dataType utils.PgDataType
 	exists   bool
+}
+
+func (c *columnInDbDef) String() string {
+	return fmt.Sprintf("{dType: %s, exists:%v}", c.dataType, c.exists)
 }
 
 // Manager defines an abstraction that can check the state of tables in a PG
@@ -116,11 +121,20 @@ func (t *defTableManager) CreateTable(tableName string, colDetails *utils.Target
 //     = it couldn't discover the columns of the table in the db
 //     = the existing column types are incompatible with the required column types
 func (t *defTableManager) FindColumnMismatch(tableName string, colDetails *utils.TargetColumns) ([]int, error) {
+	if tableName == "" || colDetails == nil || colDetails.Names == nil || len(colDetails.Names) == 0 {
+		errStr := fmt.Sprintf("attempted to find column missmatch for table '%s' with column details: %v", tableName, colDetails)
+		log.Println("E! " + errStr)
+		return nil, errors.New(errStr)
+	}
+
 	columnPresence, err := t.findColumnPresence(tableName, colDetails.Names)
 	if err != nil {
 		return nil, err
+	} else if columnPresence == nil || len(columnPresence) != len(colDetails.Names) {
+		errStr := fmt.Sprintf("presence not discovered for all columns (%v) of table '%s'; discovered only: %v", colDetails.Names, tableName, columnPresence)
+		log.Println("E! " + errStr)
+		return nil, errors.New(errStr)
 	}
-
 	missingCols := []int{}
 	for colIndex := range colDetails.Names {
 		colStateInDb := columnPresence[colIndex]
@@ -131,7 +145,9 @@ func (t *defTableManager) FindColumnMismatch(tableName string, colDetails *utils
 		typeInDb := colStateInDb.dataType
 		typeInMetric := colDetails.DataTypes[colIndex]
 		if !utils.PgTypeCanContain(typeInDb, typeInMetric) {
-			return nil, fmt.Errorf("E! A column exists in '%s' of type '%s' required type '%s'", tableName, typeInDb, typeInMetric)
+			errStr := fmt.Sprintf("A column exists in '%s' of type '%s' required type '%s'", tableName, typeInDb, typeInMetric)
+			log.Println("E! " + errStr)
+			return nil, errors.New(errStr)
 		}
 	}
 
@@ -141,6 +157,11 @@ func (t *defTableManager) FindColumnMismatch(tableName string, colDetails *utils
 // From the column details (colDetails) of a given measurement, 'columnIndices' specifies which are missing in the DB.
 // this function will add the new columns with the required data type.
 func (t *defTableManager) AddColumnsToTable(tableName string, columnIndices []int, colDetails *utils.TargetColumns) error {
+	if tableName == "" || columnIndices == nil || colDetails == nil || len(columnIndices) == 0 {
+		errStr := fmt.Sprintf("attempted to add new columns to table '%s'. indices: %v, details: %v", tableName, columnIndices, colDetails)
+		log.Println("E! " + errStr)
+		return fmt.Errorf(errStr)
+	}
 	fullTableName := utils.FullTableName(t.schema, tableName).Sanitize()
 	for _, colIndex := range columnIndices {
 		name := colDetails.Names[colIndex]
@@ -198,6 +219,11 @@ func (t *defTableManager) generateCreateTagTableSQL(tableName string, colDetails
 // For a given table and an array of column names it checks the database if those columns exist,
 // and what's their data type.
 func (t *defTableManager) findColumnPresence(tableName string, columns []string) ([]*columnInDbDef, error) {
+	if tableName == "" || columns == nil || len(columns) == 0 {
+		errStr := fmt.Sprintf("attempted to find the presence of columns %v in table '%s'; something is not right", columns, tableName)
+		log.Println("E! " + errStr)
+		return nil, errors.New(errStr)
+	}
 	columnPresenseQuery := prepareColumnPresenceQuery(columns)
 	result, err := t.db.Query(columnPresenseQuery, t.schema, tableName)
 	if err != nil {

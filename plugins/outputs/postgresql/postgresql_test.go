@@ -80,7 +80,7 @@ func prepareAllColumnsInOnePlaceNoJSON() (*Postgresql, []telegraf.Metric, map[st
 		}, []telegraf.Metric{
 			oneMetric, twoMetric, threeMetric,
 		}, map[string][]int{
-			"m": []int{0, 1, 2},
+			"m": {0, 1, 2},
 		}
 }
 
@@ -103,7 +103,7 @@ func prepareAllColumnsInOnePlaceTagsAndFieldsJSON() (*Postgresql, []telegraf.Met
 		}, []telegraf.Metric{
 			oneMetric, twoMetric, threeMetric,
 		}, map[string][]int{
-			"m": []int{0, 1, 2},
+			"m": {0, 1, 2},
 		}
 }
 

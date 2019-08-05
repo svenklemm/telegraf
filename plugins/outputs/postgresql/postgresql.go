@@ -137,7 +137,6 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 	if !p.checkConnection() {
 		log.Println("W! Connection is not alive, attempting reset")
 		if err := p.resetConnection(); err != nil {
-			log.Printf("E! Could not reset connection:\n%v", err)
 			return err
 		}
 		log.Println("I! Connection established again")
@@ -219,6 +218,9 @@ func (p *Postgresql) resetConnection() error {
 	p.tables.SetConnection(p.db)
 	if p.tagCache != nil {
 		p.tagCache.setDb(p.db)
+	}
+	if err != nil {
+		log.Printf("E! Could not reset connection:\n%v", err)
 	}
 	return err
 }
