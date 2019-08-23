@@ -136,3 +136,21 @@ func TestGenerateInsert(t *testing.T) {
 	sql = GenerateInsert("m", []string{"time", "k1", "k2", "i"})
 	assert.Equal(t, `INSERT INTO m("time","k1","k2","i") VALUES($1,$2,$3,$4)`, sql)
 }
+
+func TestStringSanitize(t *testing.T) {
+	assert.Equal(t, "foo.bar-1", SanitizeName(false, nil, "foo.bar-1"))
+	assert.Equal(t, "foo.bar-1", SanitizeName(true, map[string]string{}, "foo.bar-1"))
+
+	assert.Equal(t, "foo+bar-1", SanitizeName(true, map[string]string{".": "+"}, "foo.bar-1"))
+	assert.Equal(t, "foo+bar+1", SanitizeName(true, map[string]string{".": "+"}, "foo.bar.1"))
+	assert.Equal(t, "foo+bar=1", SanitizeName(true, map[string]string{".": "+", "-": "="}, "foo.bar-1"))
+}
+
+func TestStringArraySanitize(t *testing.T) {
+	assert.Equal(t, []string{"foo.bar-1", "foo%bar&1"}, SanitizeNames(false, nil, []string{"foo.bar-1", "foo%bar&1"}))
+	assert.Equal(t, []string{"foo.bar-1", "foo%bar&1"}, SanitizeNames(true, map[string]string{}, []string{"foo.bar-1", "foo%bar&1"}))
+
+	assert.Equal(t, []string{"foo#bar#1", "foo%bar&1"}, SanitizeNames(true, map[string]string{".": "#"}, []string{"foo.bar.1", "foo%bar&1"}))
+	assert.Equal(t, []string{"foo#bar-1", "foo%bar&1"}, SanitizeNames(true, map[string]string{".": "#"}, []string{"foo.bar-1", "foo%bar&1"}))
+	assert.Equal(t, []string{"foo#bar-1", "foo%bar=1"}, SanitizeNames(true, map[string]string{".": "#", "&": "="}, []string{"foo.bar-1", "foo%bar&1"}))
+}

@@ -15,20 +15,24 @@ type Mapper interface {
 }
 
 type defMapper struct {
-	initTargetColumns targetColumnInitializer
-	tagsAsFK          bool
-	tagsAsJSON        bool
-	fieldsAsJSON      bool
+	initTargetColumns    targetColumnInitializer
+	tagsAsFK             bool
+	tagsAsJSON           bool
+	fieldsAsJSON         bool
+	sanitizeNames        bool
+	sanitizeReplacements map[string]string
 }
 
 // NewMapper returns a new implementation of the columns.Mapper interface.
-func NewMapper(tagsAsFK, tagsAsJSON, fieldsAsJSON bool) Mapper {
+func NewMapper(tagsAsFK, tagsAsJSON, fieldsAsJSON, sanitizeNames bool, sanitizeReplacements map[string]string) Mapper {
 	initializer := getInitialColumnsGenerator(tagsAsFK, tagsAsJSON, fieldsAsJSON)
 	return &defMapper{
-		tagsAsFK:          tagsAsFK,
-		tagsAsJSON:        tagsAsJSON,
-		fieldsAsJSON:      fieldsAsJSON,
-		initTargetColumns: initializer,
+		tagsAsFK:             tagsAsFK,
+		tagsAsJSON:           tagsAsJSON,
+		fieldsAsJSON:         fieldsAsJSON,
+		sanitizeNames:        sanitizeNames,
+		sanitizeReplacements: sanitizeReplacements,
+		initTargetColumns:    initializer,
 	}
 }
 
@@ -58,10 +62,10 @@ func (d *defMapper) Target(indices []int, metrics []telegraf.Metric) (*utils.Tar
 			if d.tagsAsFK {
 				whichColumns = tagColumns
 			}
-			mapTags(metric.TagList(), alreadyMapped, whichColumns)
+			mapTags(metric.TagList(), d.sanitizeNames, d.sanitizeReplacements, alreadyMapped, whichColumns)
 		}
 
-		mapFields(metric.FieldList(), alreadyMapped, columns)
+		mapFields(metric.FieldList(), d.sanitizeNames, d.sanitizeReplacements, alreadyMapped, columns)
 	}
 
 	return columns, tagColumns

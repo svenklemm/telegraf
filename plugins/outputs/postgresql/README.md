@@ -50,4 +50,12 @@ The plugin manages the schema automatically updating missing columns, and checki
     ## Use jsonb datatype for fields. Default is false.
     # fields_as_jsonb = false
 
+    ## Replace parts of names/tags/fields.  PostreSQL has a purpose for '.'s and inclusion in table names or column names can make integration with other tools more difficult, other characters can cause issues as well
+    # cleanup_names = false
+
+    ## The strings to replace if 'cleanup_names' is true
+    # [cleanup_name_replacements]
+    # . = "_"
+    # - = "_"
+
 ```

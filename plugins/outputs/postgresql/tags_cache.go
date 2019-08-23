@@ -27,23 +27,27 @@ type tagsCache interface {
 }
 
 type defTagsCache struct {
-	cache          map[string]*lru.Cache
-	tagsAsJSONb    bool
-	tagTableSuffix string
-	schema         string
-	db             db.Wrapper
-	itemsToCache   int
+	cache                   map[string]*lru.Cache
+	tagsAsJSONb             bool
+	tagTableSuffix          string
+	schema                  string
+	db                      db.Wrapper
+	itemsToCache            int
+	cleanupNames            bool
+	cleanupNameReplacements map[string]string
 }
 
 // newTagsCache returns a new implementation of the tags cache interface with LRU memoization
-func newTagsCache(numItemsInCachePerMetric int, tagsAsJSONb bool, tagTableSuffix, schema string, db db.Wrapper) tagsCache {
+func newTagsCache(numItemsInCachePerMetric int, tagsAsJSONb bool, tagTableSuffix, schema string, cleanupNames bool, cleanupNameReplacements map[string]string, db db.Wrapper) tagsCache {
 	return &defTagsCache{
-		cache:          map[string]*lru.Cache{},
-		tagsAsJSONb:    tagsAsJSONb,
-		tagTableSuffix: tagTableSuffix,
-		schema:         schema,
-		db:             db,
-		itemsToCache:   numItemsInCachePerMetric,
+		cache:                   map[string]*lru.Cache{},
+		tagsAsJSONb:             tagsAsJSONb,
+		tagTableSuffix:          tagTableSuffix,
+		schema:                  schema,
+		db:                      db,
+		itemsToCache:            numItemsInCachePerMetric,
+		cleanupNames:            cleanupNames,
+		cleanupNameReplacements: cleanupNameReplacements,
 	}
 }
 
@@ -114,7 +118,7 @@ func (c *defTagsCache) getTagID(target *utils.TargetColumns, metric telegraf.Met
 }
 
 func (c *defTagsCache) tagsTableName(measureName string) string {
-	return measureName + c.tagTableSuffix
+	return utils.CleanupName(c.cleanupNames, c.cleanupNameReplacements, measureName) + c.tagTableSuffix
 }
 
 // check the cache for the given 'measure' if it contains the
