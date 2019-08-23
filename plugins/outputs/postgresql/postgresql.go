@@ -20,6 +20,8 @@ type Postgresql struct {
 	CachedTagsetsPerMeasurement int
 	TagsAsJsonb                 bool
 	FieldsAsJsonb               bool
+	CleanupNames                bool
+	CleanupNameReplacements     map[string]string
 	TableTemplate               string
 	TagTableSuffix              string
 
@@ -45,6 +47,8 @@ func newPostgresql() *Postgresql {
 		TagTableSuffix:              "_tag",
 		CachedTagsetsPerMeasurement: 1000,
 		DoSchemaUpdates:             true,
+		CleanupNames:                false,
+		CleanupNameReplacements:     map[string]string{".": "_", "-": "_"},
 	}
 }
 
@@ -62,10 +66,10 @@ func (p *Postgresql) Connect() error {
 	p.tables = tables.NewManager(p.db, p.Schema, p.TableTemplate)
 
 	if p.TagsAsForeignkeys {
-		p.tagCache = newTagsCache(p.CachedTagsetsPerMeasurement, p.TagsAsJsonb, p.TagTableSuffix, p.Schema, p.db)
+		p.tagCache = newTagsCache(p.CachedTagsetsPerMeasurement, p.TagsAsJsonb, p.TagTableSuffix, p.Schema, p.CleanupNames, p.CleanupNameReplacements, p.db)
 	}
 	p.rows = newRowTransformer(p.TagsAsForeignkeys, p.TagsAsJsonb, p.FieldsAsJsonb, p.tagCache)
-	p.columns = columns.NewMapper(p.TagsAsForeignkeys, p.TagsAsJsonb, p.FieldsAsJsonb)
+	p.columns = columns.NewMapper(p.TagsAsForeignkeys, p.TagsAsJsonb, p.FieldsAsJsonb, p.CleanupNames, p.CleanupNameReplacements)
 	return nil
 }
 
@@ -128,6 +132,14 @@ var sampleConfig = `
   ## Use jsonb datatype for fields
   # fields_as_jsonb = false
 
+  ## Replace parts of names/tags/fields.  PostreSQL has a purpose for '.'s and inclusion in table names or column names can make integration with other tools more difficult, other characters can cause issues as well
+  # sanitize_names = false
+
+  ## The strings to replace if 'sanitize_names' is true
+  # [sanitize_replacements]
+  # . = "_"
+  # - = "_"
+
 `
 
 func (p *Postgresql) SampleConfig() string { return sampleConfig }
@@ -157,10 +169,11 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 // to hold the new values.
 func (p *Postgresql) writeMetricsFromMeasure(measureName string, metricIndices []int, metrics []telegraf.Metric) error {
 	targetColumns, targetTagColumns := p.columns.Target(metricIndices, metrics)
+	tableName := utils.CleanupName(p.CleanupNames, p.CleanupNameReplacements, measureName)
 
 	if p.DoSchemaUpdates {
 		tagTable := true
-		if err := p.prepareTable(measureName, targetColumns, !tagTable); err != nil {
+		if err := p.prepareTable(tableName, targetColumns, !tagTable); err != nil {
 			return err
 		}
 		if p.TagsAsForeignkeys {
@@ -181,7 +194,7 @@ func (p *Postgresql) writeMetricsFromMeasure(measureName string, metricIndices [
 		}
 	}
 
-	fullTableName := utils.FullTableName(p.Schema, measureName)
+	fullTableName := utils.FullTableName(p.Schema, tableName)
 	return p.db.DoCopy(fullTableName, targetColumns.Names, values)
 }
 

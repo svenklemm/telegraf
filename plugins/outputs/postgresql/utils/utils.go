@@ -62,6 +62,33 @@ func FullTableName(schema, name string) *pgx.Identifier {
 	return &pgx.Identifier{name}
 }
 
+// SanitizeNames returns the modified database identifier names if necessary to remove '.'s
+func SanitizeNames(sanitize bool, sanitizeReplacements map[string]string, names []string) []string {
+	mappedNames := names
+
+	if sanitize {
+		for i := range names {
+			for key, replacement := range sanitizeReplacements {
+				mappedNames[i] = strings.ReplaceAll(mappedNames[i], key, replacement)
+			}
+		}
+	}
+
+	return mappedNames
+}
+
+// CleanupName conditionally replaces all of the '.'s with the supplied replacements
+func CleanupName(cleanupName bool, cleanupNameReplacements map[string]string, name string) string {
+	mappedName := name
+	if cleanupName {
+		for key, replacement := range cleanupNameReplacements {
+			mappedName = strings.ReplaceAll(mappedName, key, replacement)
+		}
+	}
+
+	return mappedName
+}
+
 // Constants for naming PostgreSQL data types both in
 // their short and long versions.
 const (

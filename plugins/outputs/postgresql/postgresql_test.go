@@ -64,6 +64,22 @@ func TestPostgresqlDbAssignmentLock(t *testing.T) {
 	assert.True(t, endOfWrite.Before(endOfReset))
 }
 
+func TestPostgresqlNameSanitization(t *testing.T) {
+	postgreSQL, metrics, metricIndices := prepareMetricsInNeedOfSanitization()
+
+	mt := postgreSQL.tables
+	err := postgreSQL.writeMetricsFromMeasure(metrics[0].Name(), metricIndices["m.1"], metrics)
+	assert.NoError(t, err)
+	assert.True(t, mt.Exists("m_1"))
+	assert.False(t, mt.Exists("m.1"))
+	assert.False(t, mt.Exists("m_2"))
+
+	err = postgreSQL.writeMetricsFromMeasure(metrics[1].Name(), metricIndices["m-2"], metrics)
+	assert.NoError(t, err)
+	assert.True(t, mt.Exists("m#2"))
+	assert.False(t, mt.Exists("m-2"))
+}
+
 func prepareAllColumnsInOnePlaceNoJSON() (*Postgresql, []telegraf.Metric, map[string][]int) {
 	oneMetric, _ := metric.New("m", map[string]string{"t": "tv"}, map[string]interface{}{"f": 1}, time.Now())
 	twoMetric, _ := metric.New("m", map[string]string{"t2": "tv2"}, map[string]interface{}{"f2": 2}, time.Now())
@@ -74,7 +90,7 @@ func prepareAllColumnsInOnePlaceNoJSON() (*Postgresql, []telegraf.Metric, map[st
 			DoSchemaUpdates: true,
 			tables:          &mockTables{t: map[string]bool{"m": true}, missingCols: []int{}},
 			rows:            &mockTransformer{rows: [][]interface{}{nil, nil, nil}},
-			columns:         columns.NewMapper(false, false, false),
+			columns:         columns.NewMapper(false, false, false, false, nil),
 			db:              &mockDb{},
 			dbConnLock:      sync.Mutex{},
 		}, []telegraf.Metric{
@@ -97,11 +113,35 @@ func prepareAllColumnsInOnePlaceTagsAndFieldsJSON() (*Postgresql, []telegraf.Met
 			FieldsAsJsonb:     true,
 			dbConnLock:        sync.Mutex{},
 			tables:            &mockTables{t: map[string]bool{"m": true}, missingCols: []int{}},
-			columns:           columns.NewMapper(false, true, true),
+			columns:           columns.NewMapper(false, true, true, false, nil),
 			rows:              &mockTransformer{rows: [][]interface{}{nil, nil, nil}},
 			db:                &mockDb{},
 		}, []telegraf.Metric{
 			oneMetric, twoMetric, threeMetric,
+		}, map[string][]int{
+			"m": {0, 1, 2},
+		}
+}
+
+func prepareMetricsInNeedOfSanitization() (*Postgresql, []telegraf.Metric, map[string][]int) {
+	oneMetric, _ := metric.New("m.1", map[string]string{"t.a": "tv"}, map[string]interface{}{"f-b": 1}, time.Now())
+	twoMetric, _ := metric.New("m-2", map[string]string{"t2": "tv2"}, map[string]interface{}{"f2": 2}, time.Now())
+
+	return &Postgresql{
+			TagTableSuffix:       "_tag",
+			DoSchemaUpdates:      true,
+			TagsAsForeignkeys:    false,
+			TagsAsJsonb:          true,
+			FieldsAsJsonb:        true,
+			SanitizeNames:        true,
+			SanitizeReplacements: map[string]string{".": "_", "-": "#"},
+			dbConnLock:           sync.Mutex{},
+			tables:               &mockTables{t: map[string]bool{"m": true}, missingCols: []int{}},
+			columns:              columns.NewMapper(false, true, true, true, map[string]string{".": "_", "-": "#"}),
+			rows:                 &mockTransformer{rows: [][]interface{}{nil, nil, nil}},
+			db:                   &mockDb{},
+		}, []telegraf.Metric{
+			oneMetric, twoMetric,
 		}, map[string][]int{
 			"m": {0, 1, 2},
 		}
