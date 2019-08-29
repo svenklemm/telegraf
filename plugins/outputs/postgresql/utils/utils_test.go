@@ -85,21 +85,21 @@ func TestLongToShortPgType(t *testing.T) {
 }
 
 func TestPgTypeCanContain(t *testing.T) {
-	assert.True(t, PgTypeCanContain(PgDataType("bogus same"), PgDataType("bogus same")))
-	assert.True(t, PgTypeCanContain(PgDataType("int8"), PgDataType("int4")))
-	assert.False(t, PgTypeCanContain(PgDataType("int8"), PgDataType("float8")))
-	assert.False(t, PgTypeCanContain(PgDataType("int8"), PgDataType("timestamptz")))
+	assert.True(t, PgTypeCanContain("bogus same", "bogus same"))
+	assert.True(t, PgTypeCanContain("int8", "int4"))
+	assert.False(t, PgTypeCanContain("int8", "float8"))
+	assert.False(t, PgTypeCanContain("int8", "timestamptz"))
 
-	assert.True(t, PgTypeCanContain(PgDataType("int4"), PgDataType("serial")))
-	assert.True(t, PgTypeCanContain(PgDataType("int8"), PgDataType("int4")))
-	assert.False(t, PgTypeCanContain(PgDataType("int4"), PgDataType("int8")))
+	assert.True(t, PgTypeCanContain("int4", "serial"))
+	assert.True(t, PgTypeCanContain("int8", "int4"))
+	assert.False(t, PgTypeCanContain("int4", "int8"))
 
-	assert.False(t, PgTypeCanContain(PgDataType("float8"), PgDataType("int8")))
-	assert.True(t, PgTypeCanContain(PgDataType("float8"), PgDataType("int4")))
+	assert.False(t, PgTypeCanContain("float8", "int8"))
+	assert.True(t, PgTypeCanContain("float8", "int4"))
 
-	assert.True(t, PgTypeCanContain(PgDataType("timestamptz"), PgDataType("timestamp")))
+	assert.True(t, PgTypeCanContain("timestamptz", "timestamp"))
 
-	assert.False(t, PgTypeCanContain(PgDataType("text"), PgDataType("timestamp")))
+	assert.False(t, PgTypeCanContain("text", "timestamp"))
 }
 
 func TestGroupMetricsByMeasurement(t *testing.T) {
@@ -111,9 +111,9 @@ func TestGroupMetricsByMeasurement(t *testing.T) {
 	m22, _ := metric.New("m2", map[string]string{"t1": "tv1"}, map[string]interface{}{"f1": 1}, time.Now())
 	m23, _ := metric.New("m2", map[string]string{}, map[string]interface{}{"f2": 2}, time.Now())
 	in := []telegraf.Metric{m11, m12, m21, m22, m13, m23}
-	expected := map[string][]int{
-		"m":  {0, 1, 4},
-		"m2": {2, 3, 5},
+	expected := map[string][]telegraf.Metric{
+		"m":  {m11,m12, m13},
+		"m2": {m21, m22, m23},
 	}
 	got := GroupMetricsByMeasurement(in)
 	assert.Equal(t, expected, got)

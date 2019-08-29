@@ -166,7 +166,7 @@ func (p *Postgresql) writeMetricsFromMeasure(measureName string, metrics []teleg
 	values := make([][]interface{}, len(metrics))
 	var rowTransformErr error
 	for rowNum, metric := range metrics {
-		values[rowNum], rowTransformErr = p.rows.createRowFromMetric(numColumns, metric, targetColumns, targetTagColumns)
+		values[rowNum], rowTransformErr = p.rows.createRowFromMetric(p.db, numColumns, metric, targetColumns, targetTagColumns)
 		if rowTransformErr != nil {
 			return fmt.Errorf("E! Could not transform metric to proper row\n%v", rowTransformErr)
 		}

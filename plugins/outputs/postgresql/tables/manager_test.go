@@ -34,11 +34,9 @@ func (m *mockDb) Close() error {
 func (m *mockDb) IsAlive() bool { return true }
 
 func TestNewManager(t *testing.T) {
-	db := &mockDb{}
-	res := NewManager(db, "schema", "table template").(*defTableManager)
+	res := NewManager("schema", "table template").(*defTableManager)
 	assert.Equal(t, "table template", res.tableTemplate)
 	assert.Equal(t, "schema", res.schema)
-	assert.Equal(t, db, res.db)
 }
 
 func TestExists(t *testing.T) {
@@ -47,28 +45,18 @@ func TestExists(t *testing.T) {
 		in    string
 		out   bool
 		db    *mockDb
-		cache map[string]bool
 	}{
 		{
-			desc:  "table already cached",
-			in:    "table",
-			db:    &mockDb{execErr: errors.New("should not have called exec")},
-			cache: map[string]bool{"table": true},
-			out:   true,
-		}, {
-			desc:  "table not cached, error on check db",
-			cache: map[string]bool{},
+			desc:  "error on check db",
 			in:    "table",
 			db:    &mockDb{execErr: errors.New("error on exec")},
 		}, {
-			desc:  "table not cached, exists in db",
-			cache: map[string]bool{},
+			desc:  "exists in db",
 			in:    "table",
 			db:    &mockDb{exec: "0 1"},
 			out:   true,
 		}, {
-			desc:  "table not cached, doesn't exist",
-			cache: map[string]bool{},
+			desc:  "doesn't exist",
 			in:    "table",
 			db:    &mockDb{exec: "0 0"},
 			out:   false,
@@ -78,11 +66,9 @@ func TestExists(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			manager := &defTableManager{
-				Tables: tc.cache,
-				db:     tc.db,
 			}
 
-			got := manager.Exists(tc.in)
+			got := manager.Exists(tc.db, tc.in)
 			assert.Equal(t, tc.out, got)
 		})
 	}
@@ -95,7 +81,7 @@ func TestCreateTable(t *testing.T) {
 		inCD     *utils.TargetColumns
 		db       db.Wrapper
 		template string
-		out      error
+		expectErr bool
 	}{
 		{
 			desc: "error on exec, no table cached",
@@ -108,7 +94,7 @@ func TestCreateTable(t *testing.T) {
 			},
 			db:       &mockDb{execErr: errors.New("error on exec")},
 			template: "CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS}) ",
-			out:      errors.New("error on exec"),
+			expectErr:      true,
 		}, {
 			desc: "all good, table is cached",
 			inT:  "t",
@@ -120,22 +106,17 @@ func TestCreateTable(t *testing.T) {
 			},
 			db:       &mockDb{},
 			template: "CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS}) ",
-			out:      nil,
+			expectErr:      false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			manager := &defTableManager{
-				Tables:        map[string]bool{},
-				db:            tc.db,
 				tableTemplate: tc.template,
 			}
-			got := manager.CreateTable(tc.inT, tc.inCD, false)
-			assert.Equal(t, tc.out, got)
-			if tc.out == nil {
-				assert.True(t, manager.Tables[tc.inT])
-			}
+			got := manager.CreateTable(tc.db, tc.inT, tc.inCD, false)
+			assert.Equal(t, tc.expectErr, got!=nil)
 		})
 	}
 }

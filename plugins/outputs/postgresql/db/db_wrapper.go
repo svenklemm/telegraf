@@ -80,7 +80,7 @@ func (d *defaultDbWrapper) IsAlive() bool {
 func parseConnectionString(connection string) (*pgx.ConnConfig, error) {
 	envConnConfig, err := pgx.ParseEnvLibpq()
 	if err != nil {
-		return nil, fmt.Errorf("E! Couldn't check PG environment variables", err)
+		return nil, fmt.Errorf("E! Couldn't check PG environment variables\n%v", err)
 	}
 
 	connConfig, err := pgx.ParseConnectionString(connection)
