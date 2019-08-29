@@ -1,7 +1,7 @@
 package db
 
 import (
-	"log"
+	"fmt"
 
 	"github.com/jackc/pgx"
 	// pgx driver for sql connections
@@ -33,8 +33,7 @@ func NewWrapper(connection string) (Wrapper, error) {
 	}
 	db, err := pgx.Connect(*connConfig)
 	if err != nil {
-		log.Printf("E! Couldn't connect to server\n%v", err)
-		return nil, err
+		return nil, fmt.Errorf("E! Couldn't connect to server\n%v", err)
 	}
 
 	return &defaultDbWrapper{
@@ -50,10 +49,10 @@ func (d *defaultDbWrapper) DoCopy(fullTableName *pgx.Identifier, colNames []stri
 	source := pgx.CopyFromRows(batch)
 	_, err := d.db.CopyFrom(*fullTableName, colNames, source)
 	if err != nil {
-		log.Printf("E! Could not insert batch of rows in output db\n%v", err)
+		return fmt.Errorf("E! Could not insert batch of rows in output db\n%v",err)
 	}
 
-	return err
+	return nil
 }
 
 func (d *defaultDbWrapper) Close() error { return d.db.Close() }
@@ -73,7 +72,6 @@ func (d *defaultDbWrapper) IsAlive() bool {
 	row := d.db.QueryRow(checkConnQuery)
 	var one int64
 	if err := row.Scan(&one); err != nil {
-		log.Printf("W! Error given on 'is conn alive':\n%v", err)
 		return false
 	}
 	return true
@@ -82,14 +80,12 @@ func (d *defaultDbWrapper) IsAlive() bool {
 func parseConnectionString(connection string) (*pgx.ConnConfig, error) {
 	envConnConfig, err := pgx.ParseEnvLibpq()
 	if err != nil {
-		log.Println("E! couldn't check PG environment variables")
-		return nil, err
+		return nil, fmt.Errorf("E! Couldn't check PG environment variables", err)
 	}
 
 	connConfig, err := pgx.ParseConnectionString(connection)
 	if err != nil {
-		log.Printf("E! Couldn't parse connection string: %s\n%v", connection, err)
-		return nil, err
+		return nil, fmt.Errorf("E! Couldn't parse connection string: %s\n%v", connection, err)
 	}
 
 	connConfig = envConnConfig.Merge(connConfig)

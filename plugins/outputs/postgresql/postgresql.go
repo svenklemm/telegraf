@@ -1,8 +1,8 @@
 package postgresql
 
 import (
+	"fmt"
 	"log"
-	"sync"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs"
@@ -23,9 +23,6 @@ type Postgresql struct {
 	TableTemplate               string
 	TagTableSuffix              string
 
-	// lock for the assignment of the dbWrapper,
-	// table manager and tags cache
-	dbConnLock sync.Mutex
 	db         db.Wrapper
 	tables     tables.Manager
 	tagCache   tagsCache
@@ -50,15 +47,12 @@ func newPostgresql() *Postgresql {
 
 // Connect establishes a connection to the target database and prepares the cache
 func (p *Postgresql) Connect() error {
-	p.dbConnLock.Lock()
-	defer p.dbConnLock.Unlock()
-
 	// set p.db with a lock
-	db, err := db.NewWrapper(p.Connection)
+	dbWrapper, err := db.NewWrapper(p.Connection)
 	if err != nil {
 		return err
 	}
-	p.db = db
+	p.db = dbWrapper
 	p.tables = tables.NewManager(p.db, p.Schema, p.TableTemplate)
 
 	if p.TagsAsForeignkeys {
@@ -71,8 +65,6 @@ func (p *Postgresql) Connect() error {
 
 // Close closes the connection to the database
 func (p *Postgresql) Close() error {
-	p.dbConnLock.Lock()
-	defer p.dbConnLock.Unlock()
 	p.tagCache = nil
 	p.tables = nil
 	return p.db.Close()
@@ -142,8 +134,8 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 		log.Println("I! Connection established again")
 	}
 	metricsByMeasurement := utils.GroupMetricsByMeasurement(metrics)
-	for measureName, indices := range metricsByMeasurement {
-		err := p.writeMetricsFromMeasure(measureName, indices, metrics)
+	for measureName, groupedMetrics := range metricsByMeasurement {
+		err := p.writeMetricsFromMeasure(measureName, groupedMetrics)
 		if err != nil {
 			return err
 		}
@@ -155,8 +147,8 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 // of the metrics that belong to the selected 'measureName' for faster lookup.
 // If schema updates are enabled the target db tables are updated to be able
 // to hold the new values.
-func (p *Postgresql) writeMetricsFromMeasure(measureName string, metricIndices []int, metrics []telegraf.Metric) error {
-	targetColumns, targetTagColumns := p.columns.Target(metricIndices, metrics)
+func (p *Postgresql) writeMetricsFromMeasure(measureName string, metrics []telegraf.Metric) error {
+	targetColumns, targetTagColumns := p.columns.Target(metrics)
 
 	if p.DoSchemaUpdates {
 		tagTable := true
@@ -171,13 +163,12 @@ func (p *Postgresql) writeMetricsFromMeasure(measureName string, metricIndices [
 		}
 	}
 	numColumns := len(targetColumns.Names)
-	values := make([][]interface{}, len(metricIndices))
+	values := make([][]interface{}, len(metrics))
 	var rowTransformErr error
-	for rowNum, metricIndex := range metricIndices {
-		values[rowNum], rowTransformErr = p.rows.createRowFromMetric(numColumns, metrics[metricIndex], targetColumns, targetTagColumns)
+	for rowNum, metric := range metrics {
+		values[rowNum], rowTransformErr = p.rows.createRowFromMetric(numColumns, metric, targetColumns, targetTagColumns)
 		if rowTransformErr != nil {
-			log.Printf("E! Could not transform metric to proper row\n%v", rowTransformErr)
-			return rowTransformErr
+			return fmt.Errorf("E! Could not transform metric to proper row\n%v", rowTransformErr)
 		}
 	}
 
@@ -205,14 +196,10 @@ func (p *Postgresql) prepareTable(tableName string, details *utils.TargetColumns
 }
 
 func (p *Postgresql) checkConnection() bool {
-	p.dbConnLock.Lock()
-	defer p.dbConnLock.Unlock()
 	return p.db != nil && p.db.IsAlive()
 }
 
 func (p *Postgresql) resetConnection() error {
-	p.dbConnLock.Lock()
-	defer p.dbConnLock.Unlock()
 	var err error
 	p.db, err = db.NewWrapper(p.Connection)
 	p.tables.SetConnection(p.db)
@@ -220,7 +207,7 @@ func (p *Postgresql) resetConnection() error {
 		p.tagCache.setDb(p.db)
 	}
 	if err != nil {
-		log.Printf("E! Could not reset connection:\n%v", err)
+		return fmt.Errorf("E! Could not reset connection:\n%v", err)
 	}
-	return err
+	return nil
 }

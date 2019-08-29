@@ -16,19 +16,17 @@ const (
 )
 
 // GroupMetricsByMeasurement groups the list of metrics by the measurement name.
-// But the values are the index of the measure from the input list of measures.
-// [m, m, m2, m2, m] => {m:[0,1,4], m2:[2,3]}
-func GroupMetricsByMeasurement(m []telegraf.Metric) map[string][]int {
-	toReturn := make(map[string][]int)
-	for i, metric := range m {
-		var metricLocations []int
+func GroupMetricsByMeasurement(m []telegraf.Metric) map[string][]telegraf.Metric {
+	toReturn := make(map[string][]telegraf.Metric)
+	for _, metric := range m {
+		var groupedMetrics []telegraf.Metric
 		var ok bool
 		name := metric.Name()
-		if metricLocations, ok = toReturn[name]; !ok {
-			metricLocations = []int{}
-			toReturn[name] = metricLocations
+		if groupedMetrics, ok = toReturn[name]; !ok {
+			groupedMetrics = []telegraf.Metric{}
+			toReturn[name] = groupedMetrics
 		}
-		toReturn[name] = append(metricLocations, i)
+		toReturn[name] = append(groupedMetrics, metric)
 	}
 	return toReturn
 }
@@ -98,7 +96,7 @@ func DerivePgDatatype(value interface{}) PgDataType {
 	case time.Time:
 		return PgTimestamptz
 	default:
-		log.Printf("E! Unknown datatype %T(%v)", value, value)
+		log.Printf("W! Unknown datatype %T(%v), using: %s", value, value, PgText)
 		return PgText
 	}
 }

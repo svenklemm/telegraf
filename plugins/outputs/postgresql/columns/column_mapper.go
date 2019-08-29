@@ -11,7 +11,7 @@ type Mapper interface {
 	// and depending on 'tagsAsFK', 'tagsAsJSON', and 'fieldsAsJSON' generate the
 	// desired columns (their name, type and which role they play) for both the
 	// main metrics table in the DB, and if tagsAsFK == true for the tags table.
-	Target(indices []int, metrics []telegraf.Metric) (*utils.TargetColumns, *utils.TargetColumns)
+	Target(metrics []telegraf.Metric) (*utils.TargetColumns, *utils.TargetColumns)
 }
 
 type defMapper struct {
@@ -36,7 +36,7 @@ func NewMapper(tagsAsFK, tagsAsJSON, fieldsAsJSON bool) Mapper {
 // and depending on 'tagsAsFK', 'tagsAsJSON', and 'fieldsAsJSON' generate the
 // desired columns (their name, type and which role they play) for both the
 // main metrics table in the DB, and if tagsAsFK == true for the tags table.
-func (d *defMapper) Target(indices []int, metrics []telegraf.Metric) (*utils.TargetColumns, *utils.TargetColumns) {
+func (d *defMapper) Target(metrics []telegraf.Metric) (*utils.TargetColumns, *utils.TargetColumns) {
 	columns, tagColumns := d.initTargetColumns()
 	if d.tagsAsJSON && d.fieldsAsJSON {
 		// if json is used for both, that's all the columns you need
@@ -44,15 +44,14 @@ func (d *defMapper) Target(indices []int, metrics []telegraf.Metric) (*utils.Tar
 	}
 
 	alreadyMapped := map[string]bool{}
-	// Iterate the metrics indexed by 'indices' and populate all the resulting required columns
+	// Iterate the metrics and populate all the resulting required columns
 	// e.g. metric1(tags:[t1], fields:[f1,f2]), metric2(tags:[t2],fields:[f2, f3])
 	// => columns = [time, t1, f1, f2, t2, f3], tagColumns = nil
 	// if tagsAsFK == true
 	//    columns = [time, tagID, f1, f2, f3], tagColumns = [tagID, t1, t2]
 	// if tagsAsFK == true && fieldsAsJSON = true
 	//    cols = [time, tagID, fields], tagCols = [tagID, t1, t2]
-	for _, index := range indices {
-		metric := metrics[index]
+	for _, metric := range metrics {
 		if !d.tagsAsJSON {
 			whichColumns := columns
 			if d.tagsAsFK {

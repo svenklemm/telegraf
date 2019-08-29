@@ -84,7 +84,7 @@ func (t *defTableManager) Exists(tableName string) bool {
 
 	commandTag, err := t.db.Exec(tableExistsTemplate, tableName, t.schema)
 	if err != nil {
-		log.Printf("E! Error checking for existence of metric table: %s\nSQL: %s\n%v", tableName, tableExistsTemplate, err)
+		log.Printf("W! Error checking for existence of metric table: %s\nSQL: %s\n%v", tableName, tableExistsTemplate, err)
 		return false
 	}
 
@@ -98,15 +98,14 @@ func (t *defTableManager) Exists(tableName string) bool {
 
 // Creates a table in the database with the column names and types specified in 'colDetails'
 func (t *defTableManager) CreateTable(tableName string, colDetails *utils.TargetColumns, tagsTable bool) error {
-	var sql string
+	var createTagTableSQL string
 	if tagsTable {
-		sql = t.generateCreateTagTableSQL(tableName, colDetails)
+		createTagTableSQL = t.generateCreateTagTableSQL(tableName, colDetails)
 	} else {
-		sql = t.generateCreateTableSQL(tableName, colDetails)
+		createTagTableSQL = t.generateCreateTableSQL(tableName, colDetails)
 	}
-	if _, err := t.db.Exec(sql); err != nil {
-		log.Printf("E! Couldn't create table: %s\nSQL: %s\n%v", tableName, sql, err)
-		return err
+	if _, err := t.db.Exec(createTagTableSQL); err != nil {
+		return fmt.Errorf("E! Couldn't create table: %s\nSQL: %s\n%v", tableName, createTagTableSQL, err)
 	}
 
 	t.Tables[tableName] = true
@@ -123,7 +122,6 @@ func (t *defTableManager) CreateTable(tableName string, colDetails *utils.Target
 func (t *defTableManager) FindColumnMismatch(tableName string, colDetails *utils.TargetColumns) ([]int, error) {
 	if tableName == "" || colDetails == nil || colDetails.Names == nil || len(colDetails.Names) == 0 {
 		errStr := fmt.Sprintf("attempted to find column missmatch for table '%s' with column details: %v", tableName, colDetails)
-		log.Println("E! " + errStr)
 		return nil, errors.New(errStr)
 	}
 
@@ -132,7 +130,6 @@ func (t *defTableManager) FindColumnMismatch(tableName string, colDetails *utils
 		return nil, err
 	} else if columnPresence == nil || len(columnPresence) != len(colDetails.Names) {
 		errStr := fmt.Sprintf("presence not discovered for all columns (%v) of table '%s'; discovered only: %v", colDetails.Names, tableName, columnPresence)
-		log.Println("E! " + errStr)
 		return nil, errors.New(errStr)
 	}
 	missingCols := []int{}
@@ -146,7 +143,6 @@ func (t *defTableManager) FindColumnMismatch(tableName string, colDetails *utils
 		typeInMetric := colDetails.DataTypes[colIndex]
 		if !utils.PgTypeCanContain(typeInDb, typeInMetric) {
 			errStr := fmt.Sprintf("A column exists in '%s' of type '%s' required type '%s'", tableName, typeInDb, typeInMetric)
-			log.Println("E! " + errStr)
 			return nil, errors.New(errStr)
 		}
 	}
@@ -159,7 +155,6 @@ func (t *defTableManager) FindColumnMismatch(tableName string, colDetails *utils
 func (t *defTableManager) AddColumnsToTable(tableName string, columnIndices []int, colDetails *utils.TargetColumns) error {
 	if tableName == "" || columnIndices == nil || colDetails == nil || len(columnIndices) == 0 {
 		errStr := fmt.Sprintf("attempted to add new columns to table '%s'. indices: %v, details: %v", tableName, columnIndices, colDetails)
-		log.Println("E! " + errStr)
 		return fmt.Errorf(errStr)
 	}
 	fullTableName := utils.FullTableName(t.schema, tableName).Sanitize()
@@ -169,8 +164,9 @@ func (t *defTableManager) AddColumnsToTable(tableName string, columnIndices []in
 		addColumnQuery := fmt.Sprintf(addColumnTemplate, fullTableName, utils.QuoteIdent(name), dataType)
 		_, err := t.db.Exec(addColumnQuery)
 		if err != nil {
-			log.Printf("E! Couldn't add missing columns to the table: %s\nError executing: %s\n%v", tableName, addColumnQuery, err)
-			return err
+			return fmt.Errorf(
+				"E! Couldn't add missing columns to the table: %s\nError executing: %s\n%v",
+				tableName, addColumnQuery, err)
 		}
 	}
 
@@ -182,7 +178,7 @@ func (t *defTableManager) AddColumnsToTable(tableName string, columnIndices []in
 // The order, column names and data types are given in 'colDetails'.
 func (t *defTableManager) generateCreateTableSQL(tableName string, colDetails *utils.TargetColumns) string {
 	colDefs := make([]string, len(colDetails.Names))
-	pk := []string{}
+	var pk []string
 	for colIndex, colName := range colDetails.Names {
 		colDefs[colIndex] = utils.QuoteIdent(colName) + " " + string(colDetails.DataTypes[colIndex])
 		if colDetails.Roles[colIndex] != utils.FieldColType {
@@ -201,7 +197,7 @@ func (t *defTableManager) generateCreateTableSQL(tableName string, colDetails *u
 
 func (t *defTableManager) generateCreateTagTableSQL(tableName string, colDetails *utils.TargetColumns) string {
 	colDefs := make([]string, len(colDetails.Names))
-	pk := []string{}
+	var pk []string
 	for colIndex, colName := range colDetails.Names {
 		colDefs[colIndex] = utils.QuoteIdent(colName) + " " + string(colDetails.DataTypes[colIndex])
 		if colDetails.Roles[colIndex] != utils.FieldColType {
@@ -221,14 +217,14 @@ func (t *defTableManager) generateCreateTagTableSQL(tableName string, colDetails
 func (t *defTableManager) findColumnPresence(tableName string, columns []string) ([]*columnInDbDef, error) {
 	if tableName == "" || columns == nil || len(columns) == 0 {
 		errStr := fmt.Sprintf("attempted to find the presence of columns %v in table '%s'; something is not right", columns, tableName)
-		log.Println("E! " + errStr)
 		return nil, errors.New(errStr)
 	}
 	columnPresenseQuery := prepareColumnPresenceQuery(columns)
 	result, err := t.db.Query(columnPresenseQuery, t.schema, tableName)
 	if err != nil {
-		log.Printf("E! Couldn't discover columns of table: %s\nQuery failed: %s\n%v", tableName, columnPresenseQuery, err)
-		return nil, err
+		return nil, fmt.Errorf(
+			"E! Couldn't discover columns of table: %s\nQuery failed: %s\n%v",
+			tableName, columnPresenseQuery, err)
 	}
 	defer result.Close()
 	columnStatus := make([]*columnInDbDef, len(columns))
@@ -240,8 +236,7 @@ func (t *defTableManager) findColumnPresence(tableName string, columns []string)
 	for result.Next() {
 		err := result.Scan(&columnName, &exists, &pgLongType)
 		if err != nil {
-			log.Printf("E! Couldn't discover columns of table: %s\n%v", tableName, err)
-			return nil, err
+			return nil, fmt.Errorf("E! Couldn't discover columns of table: %s\n%v", tableName, err)
 		}
 		pgShortType := utils.PgDataType("")
 		if pgLongType.Valid {
