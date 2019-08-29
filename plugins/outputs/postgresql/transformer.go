@@ -3,11 +3,12 @@ package postgresql
 import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/columns"
+	"github.com/influxdata/telegraf/plugins/outputs/postgresql/db"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 )
 
 type transformer interface {
-	createRowFromMetric(numColumns int, metric telegraf.Metric, targetColumns, targetTagColumns *utils.TargetColumns) ([]interface{}, error)
+	createRowFromMetric(db db.Wrapper, numColumns int, metric telegraf.Metric, targetColumns, targetTagColumns *utils.TargetColumns) ([]interface{}, error)
 }
 
 type defTransformer struct {
@@ -26,13 +27,15 @@ func newRowTransformer(tagsAsFK, tagsAsJSONb, fieldsAsJSONb bool, tagsCache tags
 	}
 }
 
-func (dt *defTransformer) createRowFromMetric(numColumns int, metric telegraf.Metric, targetColumns, targetTagColumns *utils.TargetColumns) ([]interface{}, error) {
+func (dt *defTransformer) createRowFromMetric(
+	db db.Wrapper, numColumns int, metric telegraf.Metric, targetColumns, targetTagColumns *utils.TargetColumns,
+) ([]interface{}, error) {
 	row := make([]interface{}, numColumns)
 	// handle time
 	row[0] = metric.Time()
 	// handle tags and tag id
 	if dt.tagsAsFK {
-		tagID, err := dt.tagsCache.getTagID(targetTagColumns, metric)
+		tagID, err := dt.tagsCache.getTagID(db, targetTagColumns, metric)
 		if err != nil {
 			return nil, err
 		}
