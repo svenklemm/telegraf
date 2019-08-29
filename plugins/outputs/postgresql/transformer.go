@@ -2,7 +2,6 @@ package postgresql
 
 import (
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/plugins/outputs/postgresql/columns"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/db"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 )
@@ -12,18 +11,14 @@ type transformer interface {
 }
 
 type defTransformer struct {
-	tagsAsFK      bool
-	tagsAsJSONb   bool
-	fieldsAsJSONb bool
-	tagsCache     tagsCache
+	tagsAsFK  bool
+	tagsCache tagsCache
 }
 
-func newRowTransformer(tagsAsFK, tagsAsJSONb, fieldsAsJSONb bool, tagsCache tagsCache) transformer {
+func newRowTransformer(tagsAsFK bool, tagsCache tagsCache) transformer {
 	return &defTransformer{
-		tagsAsFK:      tagsAsFK,
-		tagsAsJSONb:   tagsAsJSONb,
-		fieldsAsJSONb: fieldsAsJSONb,
-		tagsCache:     tagsCache,
+		tagsAsFK:  tagsAsFK,
+		tagsCache: tagsCache,
 	}
 }
 
@@ -41,34 +36,17 @@ func (dt *defTransformer) createRowFromMetric(
 		}
 		row[1] = tagID
 	} else {
-		if dt.tagsAsJSONb {
-			jsonVal, err := utils.BuildJsonb(metric.Tags())
-			if err != nil {
-				return nil, err
-			}
-			targetIndex := targetColumns.Target[columns.TagsJSONColumn]
-			row[targetIndex] = jsonVal
-		} else {
-			for _, tag := range metric.TagList() {
-				targetIndex := targetColumns.Target[tag.Key]
-				row[targetIndex] = tag.Value
-			}
+
+		for _, tag := range metric.TagList() {
+			targetIndex := targetColumns.Target[tag.Key]
+			row[targetIndex] = tag.Value
 		}
 	}
 
 	// handle fields
-	if dt.fieldsAsJSONb {
-		jsonVal, err := utils.BuildJsonb(metric.Fields())
-		if err != nil {
-			return nil, err
-		}
-		targetIndex := targetColumns.Target[columns.FieldsJSONColumn]
-		row[targetIndex] = jsonVal
-	} else {
-		for _, field := range metric.FieldList() {
-			targetIndex := targetColumns.Target[field.Key]
-			row[targetIndex] = field.Value
-		}
+	for _, field := range metric.FieldList() {
+		targetIndex := targetColumns.Target[field.Key]
+		row[targetIndex] = field.Value
 	}
 
 	return row, nil

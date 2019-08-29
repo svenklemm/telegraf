@@ -3,6 +3,7 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"math/rand"
 	"strconv"
 	"testing"
@@ -27,7 +28,7 @@ const (
 	testFieldVal    = int(1)
 )
 
-func prepareAndConnect(t *testing.T, foreignTags, jsonTags, jsonFields bool) (telegraf.Metric, *sql.DB, *Postgresql) {
+func prepareAndConnect(t *testing.T, foreignTags bool) (telegraf.Metric, *sql.DB, *Postgresql) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -38,8 +39,6 @@ func prepareAndConnect(t *testing.T, foreignTags, jsonTags, jsonFields bool) (te
 		Connection:        connStrAdmin,
 		Schema:            "public",
 		TagsAsForeignkeys: foreignTags,
-		TagsAsJsonb:       jsonTags,
-		FieldsAsJsonb:     jsonFields,
 		DoSchemaUpdates:   true,
 		TableTemplate:     "CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS})",
 		TagTableSuffix:    "_tags",
@@ -80,91 +79,13 @@ func testMetric(name string, tag string, value interface{}) telegraf.Metric {
 }
 
 func TestWriteToPostgres(t *testing.T) {
-	testMetric, dbConn, postgres := prepareAndConnect(t, false, false, false)
+	testMetric, dbConn, postgres := prepareAndConnect(t, false)
 	writeAndAssertSingleMetricNoJSON(t, testMetric, dbConn, postgres)
-}
-
-func TestWriteToPostgresJsonTags(t *testing.T) {
-	tagsAsForeignKey := false
-	tagsAsJSON := true
-	fieldsAsJSON := false
-	testMetric, dbConn, postgres := prepareAndConnect(t, tagsAsForeignKey, tagsAsJSON, fieldsAsJSON)
-	defer dbConn.Close()
-
-	// insert first metric
-	err := postgres.Write([]telegraf.Metric{testMetric})
-	assert.NoError(t, err, "Could not write")
-
-	// should have created table, all columns in the same table
-	row := dbConn.QueryRow(fmt.Sprintf(`SELECT "%s", "%s", "%s" FROM "%s"`, columns.TimeColumnName, columns.TagsJSONColumn, testFieldName, testMetric.Name()))
-	var ts time.Time
-	var tags string
-	var value int64
-	err = row.Scan(&ts, &tags, &value)
-	assert.NoError(t, err, "Could not check test results")
-
-	sentTag, _ := testMetric.GetTag(testTagName)
-	sentTagJSON := fmt.Sprintf(`{"%s": "%s"}`, testTagName, sentTag)
-	sentValue, _ := testMetric.GetField(testFieldName)
-	sentTs := testMetric.Time()
-	// postgres doesn't support nano seconds in timestamp
-	sentTsNanoSecondOffset := sentTs.Nanosecond()
-	nanoSeconds := sentTsNanoSecondOffset % 1000
-	sentTs = sentTs.Add(time.Duration(-nanoSeconds) * time.Nanosecond)
-	if !ts.UTC().Equal(sentTs) || tags != sentTagJSON || value != sentValue.(int64) {
-		assert.Fail(t, fmt.Sprintf("Expected: %v, %v, %v; Received: %v, %v, %v",
-			sentTs, sentTagJSON, sentValue,
-			ts.UTC(), tags, value))
-	}
-}
-
-func TestWriteToPostgresJsonTagsAsForeignTable(t *testing.T) {
-	tagsAsForeignKey := true
-	tagsAsJSON := true
-	fieldsAsJSON := false
-	testMetric, dbConn, postgres := prepareAndConnect(t, tagsAsForeignKey, tagsAsJSON, fieldsAsJSON)
-	defer dbConn.Close()
-
-	// insert first metric
-	err := postgres.Write([]telegraf.Metric{testMetric})
-	assert.NoError(t, err, "Could not write")
-
-	// should have created table, all columns in the same table
-	row := dbConn.QueryRow(fmt.Sprintf(`SELECT "%s", "%s", "%s" FROM "%s"`, columns.TimeColumnName, columns.TagIDColumnName, testFieldName, testMetric.Name()))
-	var ts time.Time
-	var tagID int64
-	var value int64
-	err = row.Scan(&ts, &tagID, &value)
-	assert.NoError(t, err, "Could not check test results")
-
-	sentValue, _ := testMetric.GetField(testFieldName)
-	sentTs := testMetric.Time()
-	// postgres doesn't support nano seconds in timestamp
-	sentTsNanoSecondOffset := sentTs.Nanosecond()
-	nanoSeconds := sentTsNanoSecondOffset % 1000
-	sentTs = sentTs.Add(time.Duration(-nanoSeconds) * time.Nanosecond)
-	if !ts.UTC().Equal(sentTs) || tagID != 1 || value != sentValue.(int64) {
-		assert.Fail(t, fmt.Sprintf("Expected: %v, %v, %v; Received: %v, %v, %v",
-			sentTs, 1, sentValue,
-			ts.UTC(), tagID, value))
-	}
-
-	sentTag, _ := testMetric.GetTag(testTagName)
-	sentTagJSON := fmt.Sprintf(`{"%s": "%s"}`, testTagName, sentTag)
-	row = dbConn.QueryRow(fmt.Sprintf(`SELECT "%s", "%s" FROM "%s%s"`, columns.TagIDColumnName, columns.TagsJSONColumn, testMetric.Name(), postgres.TagTableSuffix))
-	tagID = 0
-	var tags string
-	err = row.Scan(&tagID, &tags)
-	assert.NoError(t, err, "Could not check test results")
-	assert.Equal(t, int64(1), tagID)
-	assert.Equal(t, sentTagJSON, tags)
 }
 
 func TestWriteToPostgresMultipleRowsOneTag(t *testing.T) {
 	tagsAsForeignKey := true
-	tagsAsJSON := true
-	fieldsAsJSON := false
-	testMetric, dbConn, postgres := prepareAndConnect(t, tagsAsForeignKey, tagsAsJSON, fieldsAsJSON)
+	testMetric, dbConn, postgres := prepareAndConnect(t, tagsAsForeignKey)
 	defer dbConn.Close()
 
 	// insert first metric
@@ -179,21 +100,18 @@ func TestWriteToPostgresMultipleRowsOneTag(t *testing.T) {
 	assert.Equal(t, int64(2), count)
 
 	sentTag, _ := testMetric.GetTag(testTagName)
-	sentTagJSON := fmt.Sprintf(`{"%s": "%s"}`, testTagName, sentTag)
-	row = dbConn.QueryRow(fmt.Sprintf(`SELECT "%s", "%s" FROM "%s%s"`, columns.TagIDColumnName, columns.TagsJSONColumn, testMetric.Name(), postgres.TagTableSuffix))
+	row = dbConn.QueryRow(fmt.Sprintf(`SELECT "%s", "%s" FROM "%s%s"`, columns.TagIDColumnName, testTagName, testMetric.Name(), postgres.TagTableSuffix))
 	var tagID int64
 	var tags string
 	err = row.Scan(&tagID, &tags)
 	assert.NoError(t, err, "Could not check test results")
 	assert.Equal(t, int64(1), tagID)
-	assert.Equal(t, sentTagJSON, tags)
+	assert.Equal(t, sentTag, tags)
 }
 
 func TestWriteToPostgresAddNewTag(t *testing.T) {
 	tagsAsForeignKey := true
-	tagsAsJSON := true
-	fieldsAsJSON := false
-	testMetricWithOneTag, dbConn, postgres := prepareAndConnect(t, tagsAsForeignKey, tagsAsJSON, fieldsAsJSON)
+	testMetricWithOneTag, dbConn, postgres := prepareAndConnect(t, tagsAsForeignKey)
 	defer dbConn.Close()
 
 	testMetricWithOneMoreTag := testMetric(testMetricName, "tag1", int(2))
@@ -211,33 +129,34 @@ func TestWriteToPostgresAddNewTag(t *testing.T) {
 
 	// and two tagsets
 	sentTag, _ := testMetricWithOneTag.GetTag(testTagName)
-	sentTagJSON := fmt.Sprintf(`{"%s": "%s"}`, testTagName, sentTag)
-	row = dbConn.QueryRow(fmt.Sprintf(`SELECT "%s" FROM "%s%s" WHERE "%s"=1`, columns.TagsJSONColumn, testMetricWithOneTag.Name(), postgres.TagTableSuffix, columns.TagIDColumnName))
-	var tags string
-	err = row.Scan(&tags)
+	row = dbConn.QueryRow(fmt.Sprintf(`SELECT "%s" FROM "%s%s" WHERE "%s"=1`, testTagName, testMetricWithOneTag.Name(), postgres.TagTableSuffix, columns.TagIDColumnName))
+	var tagVal string
+	err = row.Scan(&tagVal)
 	assert.NoError(t, err, "Could not check test results")
-	assert.Equal(t, sentTagJSON, tags)
+	assert.Equal(t, sentTag, tagVal)
 
-	secondSentTagsJSON := fmt.Sprintf(`{"%s": "tag1", "second_tag": "tag2"}`, testTagName)
-	row = dbConn.QueryRow(fmt.Sprintf(`SELECT "%s" FROM "%s%s" WHERE "%s"=2`, columns.TagsJSONColumn, testMetricWithOneMoreTag.Name(), postgres.TagTableSuffix, columns.TagIDColumnName))
-	err = row.Scan(&tags)
+	row = dbConn.QueryRow(fmt.Sprintf(`SELECT "%s","%s" FROM "%s%s" WHERE "%s"=2`, testTagName, "second_tag", testMetricWithOneMoreTag.Name(), postgres.TagTableSuffix, columns.TagIDColumnName))
+	var tagVal2 string
+	err = row.Scan(&tagVal, &tagVal2)
+	sentTag, _ = testMetricWithOneMoreTag.GetTag(testTagName)
 	assert.NoError(t, err, "Could not check test results")
-	assert.Equal(t, secondSentTagsJSON, tags)
+	assert.Equal(t, sentTag, tagVal)
+	assert.Equal(t, "tag2", tagVal2)
 
 	// insert new point with a third tagset
 	testMetricWithThirdTag := testMetric(testMetricName, "tag1", int(2))
 	testMetricWithThirdTag.AddTag("third_tag", "tag3")
 	err = postgres.Write([]telegraf.Metric{testMetricWithThirdTag})
 	assert.NoError(t, err, "Could not write")
-	thirdSentTagsJSON := fmt.Sprintf(`{"%s": "tag1", "third_tag": "tag3"}`, testTagName)
-	row = dbConn.QueryRow(fmt.Sprintf(`SELECT %s FROM "%s%s" WHERE "%s"=3`, columns.TagsJSONColumn, testMetricWithThirdTag.Name(), postgres.TagTableSuffix, columns.TagIDColumnName))
-	err = row.Scan(&tags)
+	row = dbConn.QueryRow(fmt.Sprintf(`SELECT %s FROM "%s%s" WHERE "%s"=3`, "third_tag", testMetricWithThirdTag.Name(), postgres.TagTableSuffix, columns.TagIDColumnName))
+	var tagVal3 string
+	err = row.Scan(&tagVal3)
 	assert.NoError(t, err, "Could not check test results")
-	assert.Equal(t, thirdSentTagsJSON, tags)
+	assert.Equal(t, "tag3", tagVal3)
 }
 
 func TestWriteToPostgresAddNewField(t *testing.T) {
-	testMetric, dbConn, postgres := prepareAndConnect(t, false, false, false)
+	testMetric, dbConn, postgres := prepareAndConnect(t, false)
 	defer dbConn.Close()
 
 	// insert first metric
@@ -298,9 +217,7 @@ func writeAndAssertSingleMetricNoJSON(t *testing.T, testMetric telegraf.Metric, 
 
 func TestWriteToPostgresMultipleMetrics(t *testing.T) {
 	tagsAsForeignKey := true
-	tagsAsJSON := true
-	fieldsAsJSON := false
-	testMetric, dbConn, postgres := prepareAndConnect(t, tagsAsForeignKey, tagsAsJSON, fieldsAsJSON)
+	testMetric, dbConn, postgres := prepareAndConnect(t, tagsAsForeignKey)
 	defer dbConn.Close()
 	dbConn.Exec(`DROP TABLE IF EXISTS "` + testMetric.Name() + `2"`)
 	dbConn.Exec(`DROP TABLE IF EXISTS "` + testMetric.Name() + `2_tag"`)
@@ -334,14 +251,13 @@ func TestWriteToPostgresMultipleMetrics(t *testing.T) {
 		assert.Equal(t, sentValue.(int64), value)
 
 		sentTag, _ := testMetric.GetTag(testTagName)
-		sentTagJSON := fmt.Sprintf(`{"%s": "%s"}`, testTagName, sentTag)
-		row := dbConn.QueryRow(fmt.Sprintf(`SELECT "%s", "%s" FROM "%s%s"`, columns.TagIDColumnName, columns.TagsJSONColumn, testMetric.Name(), postgres.TagTableSuffix))
+		row := dbConn.QueryRow(fmt.Sprintf(`SELECT "%s", "%s" FROM "%s%s"`, columns.TagIDColumnName, testTagName, testMetric.Name(), postgres.TagTableSuffix))
 		tagID = 0
 		var tags string
 		err = row.Scan(&tagID, &tags)
 		assert.NoError(t, err, "Could not check test results")
 		assert.Equal(t, int64(1), tagID)
-		assert.Equal(t, sentTagJSON, tags)
+		assert.Equal(t, sentTag, tags)
 	}
 	// check results for second metric
 	row := dbConn.QueryRow(fmt.Sprintf(`SELECT "%s", "%s", "%s" FROM "%s"`, columns.TimeColumnName, columns.TagIDColumnName, testFieldName, testMetricInSecondMeasurement.Name()))
@@ -366,7 +282,7 @@ func TestWriteToPostgresMultipleMetrics(t *testing.T) {
 }
 
 func TestPerformanceIsAcceptable(t *testing.T) {
-	_, db, postgres := prepareAndConnect(t, false, false, false)
+	_, db, postgres := prepareAndConnect(t, false)
 	defer db.Close()
 	numMetricsPerMeasure := 10000
 	numTags := 5
@@ -399,7 +315,7 @@ func TestPerformanceIsAcceptable(t *testing.T) {
 }
 
 func TestPostgresBatching(t *testing.T) {
-	_, db, postgres := prepareAndConnect(t, false, false, false)
+	_, db, postgres := prepareAndConnect(t, false)
 	defer db.Close()
 	numMetricsPerMeasure := 5
 	numMeasures := 2
@@ -427,9 +343,9 @@ func TestPostgresBatching(t *testing.T) {
 		assert.NoError(t, err)
 		var count int64
 		rows.Next()
-		rows.Scan(&count)
+		require.NoError(t, rows.Scan(&count))
 		assert.Equal(t, int64(numMetricsPerMeasure), count)
-		rows.Close()
+		require.NoError(t,rows.Close())
 	}
 }
 
@@ -443,8 +359,6 @@ func TestNotOwnerOfExistingTable(t *testing.T) {
 		Connection:        connStrNonAdmin,
 		Schema:            "public",
 		TagsAsForeignkeys: false,
-		TagsAsJsonb:       false,
-		FieldsAsJsonb:     false,
 		DoSchemaUpdates:   true,
 		TableTemplate:     "CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS})",
 		TagTableSuffix:    "_tags",

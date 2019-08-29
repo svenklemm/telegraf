@@ -6,11 +6,7 @@ import "github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 const (
 	TimeColumnName          = "time"
 	TimeColumnDataType      = utils.PgTimestamptz
-	TimeColumnDefinition    = TimeColumnName + " " + utils.PgTimestamptz
 	TagIDColumnName         = "tag_id"
 	TagIDColumnDataType     = utils.PgInt4
 	TagIDColumnDataTypeAsPK = utils.PgSerial
-	TagsJSONColumn          = "tags"
-	FieldsJSONColumn        = "fields"
-	JSONColumnDataType      = utils.PgJSONb
 )

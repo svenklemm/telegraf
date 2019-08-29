@@ -18,8 +18,6 @@ type Postgresql struct {
 	DoSchemaUpdates             bool
 	TagsAsForeignkeys           bool
 	CachedTagsetsPerMeasurement int
-	TagsAsJsonb                 bool
-	FieldsAsJsonb               bool
 	TableTemplate               string
 	TagTableSuffix              string
 
@@ -56,10 +54,10 @@ func (p *Postgresql) Connect() error {
 	p.tables = tables.NewManager(p.Schema, p.TableTemplate)
 
 	if p.TagsAsForeignkeys {
-		p.tagCache = newTagsCache(p.CachedTagsetsPerMeasurement, p.TagsAsJsonb, p.TagTableSuffix, p.Schema)
+		p.tagCache = newTagsCache(p.CachedTagsetsPerMeasurement, p.TagTableSuffix, p.Schema)
 	}
-	p.rows = newRowTransformer(p.TagsAsForeignkeys, p.TagsAsJsonb, p.FieldsAsJsonb, p.tagCache)
-	p.columns = columns.NewMapper(p.TagsAsForeignkeys, p.TagsAsJsonb, p.FieldsAsJsonb)
+	p.rows = newRowTransformer(p.TagsAsForeignkeys, p.tagCache)
+	p.columns = columns.NewMapper(p.TagsAsForeignkeys)
 	return nil
 }
 
@@ -113,12 +111,6 @@ var sampleConfig = `
 
   ## Schema to create the tables into
   # schema = "public"
-
-  ## Use jsonb datatype for tags
-  # tags_as_jsonb = false
-
-  ## Use jsonb datatype for fields
-  # fields_as_jsonb = false
 
 `
 

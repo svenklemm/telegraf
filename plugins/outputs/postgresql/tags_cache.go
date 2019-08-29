@@ -21,23 +21,21 @@ const (
 // from the database (used only when TagsAsForeignKey property selected).
 // Also caches the LRU tagIDs
 type tagsCache interface {
-	getTagID(db.Wrapper,*utils.TargetColumns,telegraf.Metric) (int, error)
+	getTagID(db.Wrapper, *utils.TargetColumns, telegraf.Metric) (int, error)
 	tagsTableName(measureName string) string
 }
 
 type defTagsCache struct {
 	cache          map[string]*lru.Cache
-	tagsAsJSONb    bool
 	tagTableSuffix string
 	schema         string
 	itemsToCache   int
 }
 
 // newTagsCache returns a new implementation of the tags cache interface with LRU memoization
-func newTagsCache(numItemsInCachePerMetric int, tagsAsJSONb bool, tagTableSuffix, schema string) tagsCache {
+func newTagsCache(numItemsInCachePerMetric int, tagTableSuffix, schema string) tagsCache {
 	return &defTagsCache{
 		cache:          map[string]*lru.Cache{},
-		tagsAsJSONb:    tagsAsJSONb,
 		tagTableSuffix: tagTableSuffix,
 		schema:         schema,
 		itemsToCache:   numItemsInCachePerMetric,
@@ -48,7 +46,7 @@ func newTagsCache(numItemsInCachePerMetric int, tagsAsJSONb bool, tagTableSuffix
 // Otherwise asks the database if that tag set has already been recorded.
 // If not recorded, inserts a new row to the tags table for the specific measurement.
 // Re-caches the tagID after checking the DB.
-func (c *defTagsCache) getTagID(db db.Wrapper,target *utils.TargetColumns, metric telegraf.Metric) (int, error) {
+func (c *defTagsCache) getTagID(db db.Wrapper, target *utils.TargetColumns, metric telegraf.Metric) (int, error) {
 	measureName := metric.Name()
 	tags := metric.Tags()
 	cacheKey := constructCacheKey(tags)
@@ -59,31 +57,18 @@ func (c *defTagsCache) getTagID(db db.Wrapper,target *utils.TargetColumns, metri
 
 	var whereParts []string
 	var whereValues []interface{}
-	if c.tagsAsJSONb {
-		whereParts = []string{utils.QuoteIdent(columns.TagsJSONColumn) + "= $1"}
-		numTags := len(tags)
-		if numTags > 0 {
-			d, err := utils.BuildJsonb(tags)
-			if err != nil {
-				return tagID, err
-			}
-			whereValues = []interface{}{d}
+
+	whereParts = make([]string, len(target.Names)-1)
+	whereValues = make([]interface{}, len(target.Names)-1)
+	whereIndex := 1
+	for columnIndex, tagName := range target.Names[1:] {
+		if val, ok := tags[tagName]; ok {
+			whereParts[columnIndex] = utils.QuoteIdent(tagName) + " = $" + strconv.Itoa(whereIndex)
+			whereValues[whereIndex-1] = val
 		} else {
-			whereValues = []interface{}{nil}
+			whereParts[whereIndex-1] = tagName + " IS NULL"
 		}
-	} else {
-		whereParts = make([]string, len(target.Names)-1)
-		whereValues = make([]interface{}, len(target.Names)-1)
-		whereIndex := 1
-		for columnIndex, tagName := range target.Names[1:] {
-			if val, ok := tags[tagName]; ok {
-				whereParts[columnIndex] = utils.QuoteIdent(tagName) + " = $" + strconv.Itoa(whereIndex)
-				whereValues[whereIndex-1] = val
-			} else {
-				whereParts[whereIndex-1] = tagName + " IS NULL"
-			}
-			whereIndex++
-		}
+		whereIndex++
 	}
 
 	tagsTableName := c.tagsTableName(measureName)

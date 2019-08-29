@@ -22,12 +22,10 @@ type defMapper struct {
 }
 
 // NewMapper returns a new implementation of the columns.Mapper interface.
-func NewMapper(tagsAsFK, tagsAsJSON, fieldsAsJSON bool) Mapper {
-	initializer := getInitialColumnsGenerator(tagsAsFK, tagsAsJSON, fieldsAsJSON)
+func NewMapper(tagsAsFK bool) Mapper {
+	initializer := getInitialColumnsGenerator(tagsAsFK)
 	return &defMapper{
 		tagsAsFK:          tagsAsFK,
-		tagsAsJSON:        tagsAsJSON,
-		fieldsAsJSON:      fieldsAsJSON,
 		initTargetColumns: initializer,
 	}
 }
