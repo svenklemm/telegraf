@@ -33,10 +33,10 @@ func (c *columnInDbDef) String() string {
 // Manager defines an abstraction that can check the state of tables in a PG
 // database, create, and update them.
 type Manager interface {
-	// Exists checks if a table with the given name already is present in the DB.
-	Exists(tableName string) bool
+	// Exists returns true if a the table `tableName` exists in the database
+	Exists(db db.Wrapper, tableName string) bool
 	// Creates a table in the database with the column names and types specified in 'colDetails'
-	CreateTable(tableName string, colDetails *utils.TargetColumns, tagTable bool) error
+	CreateTable(db db.Wrapper, tableName string, colDetails *utils.TargetColumns, tagTable bool) error
 	// This function queries a table in the DB if the required columns in 'colDetails' are present and what is their
 	// data type. For existing columns it checks if the data type in the DB can safely hold the data from the metrics.
 	// It returns:
@@ -44,71 +44,49 @@ type Manager interface {
 	//   - or an error if
 	//     = it couldn't discover the columns of the table in the db
 	//     = the existing column types are incompatible with the required column types
-	FindColumnMismatch(tableName string, colDetails *utils.TargetColumns) ([]int, error)
+	FindColumnMismatch(db db.Wrapper, tableName string, colDetails *utils.TargetColumns) ([]int, error)
 	// From the column details (colDetails) of a given measurement, 'columnIndices' specifies which are missing in the DB.
 	// this function will add the new columns with the required data type.
-	AddColumnsToTable(tableName string, columnIndices []int, colDetails *utils.TargetColumns) error
-	SetConnection(db db.Wrapper)
+	AddColumnsToTable(db db.Wrapper, tableName string, columnIndices []int, colDetails *utils.TargetColumns) error
 }
 
 type defTableManager struct {
-	Tables        map[string]bool
-	db            db.Wrapper
 	schema        string
 	tableTemplate string
 }
 
 // NewManager returns an instance of the tables.Manager interface
 // that can handle checking and updating the state of tables in the PG database.
-func NewManager(db db.Wrapper, schema, tableTemplate string) Manager {
+func NewManager(schema, tableTemplate string) Manager {
 	return &defTableManager{
-		Tables:        make(map[string]bool),
-		db:            db,
 		tableTemplate: tableTemplate,
 		schema:        schema,
 	}
 }
 
-// SetConnection to db, used only when previous was killed or restarted.
-// It will also clear the local cache of which table exists.
-func (t *defTableManager) SetConnection(db db.Wrapper) {
-	t.db = db
-	t.Tables = make(map[string]bool)
-}
-
 // Exists checks if a table with the given name already is present in the DB.
-func (t *defTableManager) Exists(tableName string) bool {
-	if _, ok := t.Tables[tableName]; ok {
-		return true
-	}
-
-	commandTag, err := t.db.Exec(tableExistsTemplate, tableName, t.schema)
+func (t *defTableManager) Exists(db db.Wrapper, tableName string) bool {
+	commandTag, err := db.Exec(tableExistsTemplate, tableName, t.schema)
 	if err != nil {
 		log.Printf("W! Error checking for existence of metric table: %s\nSQL: %s\n%v", tableName, tableExistsTemplate, err)
 		return false
 	}
 
-	if commandTag.RowsAffected() == 1 {
-		t.Tables[tableName] = true
-		return true
-	}
-
-	return false
+	return commandTag.RowsAffected() == 1
 }
 
 // Creates a table in the database with the column names and types specified in 'colDetails'
-func (t *defTableManager) CreateTable(tableName string, colDetails *utils.TargetColumns, tagsTable bool) error {
+func (t *defTableManager) CreateTable(db db.Wrapper, tableName string, colDetails *utils.TargetColumns, tagsTable bool) error {
 	var createTagTableSQL string
 	if tagsTable {
 		createTagTableSQL = t.generateCreateTagTableSQL(tableName, colDetails)
 	} else {
 		createTagTableSQL = t.generateCreateTableSQL(tableName, colDetails)
 	}
-	if _, err := t.db.Exec(createTagTableSQL); err != nil {
+	if _, err := db.Exec(createTagTableSQL); err != nil {
 		return fmt.Errorf("E! Couldn't create table: %s\nSQL: %s\n%v", tableName, createTagTableSQL, err)
 	}
 
-	t.Tables[tableName] = true
 	return nil
 }
 
@@ -119,13 +97,16 @@ func (t *defTableManager) CreateTable(tableName string, colDetails *utils.Target
 //   - or an error if
 //     = it couldn't discover the columns of the table in the db
 //     = the existing column types are incompatible with the required column types
-func (t *defTableManager) FindColumnMismatch(tableName string, colDetails *utils.TargetColumns) ([]int, error) {
+func (t *defTableManager) FindColumnMismatch(db db.Wrapper, tableName string, colDetails *utils.TargetColumns) ([]int, error) {
+	if db == nil {
+		return nil, errors.New("database connection is nil")
+	}
 	if tableName == "" || colDetails == nil || colDetails.Names == nil || len(colDetails.Names) == 0 {
 		errStr := fmt.Sprintf("attempted to find column missmatch for table '%s' with column details: %v", tableName, colDetails)
 		return nil, errors.New(errStr)
 	}
 
-	columnPresence, err := t.findColumnPresence(tableName, colDetails.Names)
+	columnPresence, err := t.findColumnPresence(db, tableName, colDetails.Names)
 	if err != nil {
 		return nil, err
 	} else if columnPresence == nil || len(columnPresence) != len(colDetails.Names) {
@@ -152,7 +133,10 @@ func (t *defTableManager) FindColumnMismatch(tableName string, colDetails *utils
 
 // From the column details (colDetails) of a given measurement, 'columnIndices' specifies which are missing in the DB.
 // this function will add the new columns with the required data type.
-func (t *defTableManager) AddColumnsToTable(tableName string, columnIndices []int, colDetails *utils.TargetColumns) error {
+func (t *defTableManager) AddColumnsToTable(db db.Wrapper, tableName string, columnIndices []int, colDetails *utils.TargetColumns) error {
+	if db == nil {
+		return errors.New("database connection is nil")
+	}
 	if tableName == "" || columnIndices == nil || colDetails == nil || len(columnIndices) == 0 {
 		errStr := fmt.Sprintf("attempted to add new columns to table '%s'. indices: %v, details: %v", tableName, columnIndices, colDetails)
 		return fmt.Errorf(errStr)
@@ -162,7 +146,7 @@ func (t *defTableManager) AddColumnsToTable(tableName string, columnIndices []in
 		name := colDetails.Names[colIndex]
 		dataType := colDetails.DataTypes[colIndex]
 		addColumnQuery := fmt.Sprintf(addColumnTemplate, fullTableName, utils.QuoteIdent(name), dataType)
-		_, err := t.db.Exec(addColumnQuery)
+		_, err := db.Exec(addColumnQuery)
 		if err != nil {
 			return fmt.Errorf(
 				"E! Couldn't add missing columns to the table: %s\nError executing: %s\n%v",
@@ -214,13 +198,13 @@ func (t *defTableManager) generateCreateTagTableSQL(tableName string, colDetails
 
 // For a given table and an array of column names it checks the database if those columns exist,
 // and what's their data type.
-func (t *defTableManager) findColumnPresence(tableName string, columns []string) ([]*columnInDbDef, error) {
+func (t *defTableManager) findColumnPresence(db db.Wrapper, tableName string, columns []string) ([]*columnInDbDef, error) {
 	if tableName == "" || columns == nil || len(columns) == 0 {
 		errStr := fmt.Sprintf("attempted to find the presence of columns %v in table '%s'; something is not right", columns, tableName)
 		return nil, errors.New(errStr)
 	}
 	columnPresenseQuery := prepareColumnPresenceQuery(columns)
-	result, err := t.db.Query(columnPresenseQuery, t.schema, tableName)
+	result, err := db.Query(columnPresenseQuery, t.schema, tableName)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"E! Couldn't discover columns of table: %s\nQuery failed: %s\n%v",

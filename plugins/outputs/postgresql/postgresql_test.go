@@ -1,7 +1,6 @@
 package postgresql
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -16,55 +15,24 @@ import (
 )
 
 func TestPostgresqlMetricsFromMeasure(t *testing.T) {
-	postgreSQL, metrics, metricIndices := prepareAllColumnsInOnePlaceNoJSON()
-	err := postgreSQL.writeMetricsFromMeasure(metrics[0].Name(), metricIndices["m"], metrics)
+	postgreSQL, metrics := prepareAllColumnsInOnePlaceNoJSON()
+	err := postgreSQL.writeMetricsFromMeasure(metrics["m"][0].Name(), metrics["m"])
 	assert.NoError(t, err)
-	postgreSQL, metrics, metricIndices = prepareAllColumnsInOnePlaceTagsAndFieldsJSON()
-	err = postgreSQL.writeMetricsFromMeasure(metrics[0].Name(), metricIndices["m"], metrics)
+	postgreSQL, metrics = prepareAllColumnsInOnePlaceTagsAndFieldsJSON()
+	err = postgreSQL.writeMetricsFromMeasure(metrics["m"][0].Name(), metrics["m"])
 	assert.NoError(t, err)
 }
 
 func TestPostgresqlIsAliveCalledOnWrite(t *testing.T) {
-	postgreSQL, metrics, _ := prepareAllColumnsInOnePlaceNoJSON()
+	postgreSQL, metrics := prepareAllColumnsInOnePlaceNoJSON()
 	mockedDb := postgreSQL.db.(*mockDb)
 	mockedDb.isAliveResponses = []bool{true}
-	err := postgreSQL.Write(metrics[:1])
+	err := postgreSQL.Write(metrics["m"][:1])
 	assert.NoError(t, err)
 	assert.Equal(t, 1, mockedDb.currentIsAliveResponse)
 }
 
-func TestPostgresqlDbAssignmentLock(t *testing.T) {
-	postgreSQL, metrics, _ := prepareAllColumnsInOnePlaceNoJSON()
-	mockedDb := postgreSQL.db.(*mockDb)
-	mockedDb.isAliveResponses = []bool{true}
-	mockedDb.secondsToSleepInIsAlive = 3
-	var endOfWrite, startOfWrite, startOfReset, endOfReset time.Time
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		startOfWrite = time.Now()
-		err := postgreSQL.Write(metrics[:1])
-		assert.NoError(t, err)
-		endOfWrite = time.Now()
-		wg.Done()
-	}()
-	time.Sleep(time.Second)
-
-	go func() {
-		startOfReset = time.Now()
-		postgreSQL.dbConnLock.Lock()
-		time.Sleep(time.Second)
-		postgreSQL.dbConnLock.Unlock()
-		endOfReset = time.Now()
-		wg.Done()
-	}()
-	wg.Wait()
-	assert.True(t, startOfWrite.Before(startOfReset))
-	assert.True(t, startOfReset.Before(endOfWrite))
-	assert.True(t, endOfWrite.Before(endOfReset))
-}
-
-func prepareAllColumnsInOnePlaceNoJSON() (*Postgresql, []telegraf.Metric, map[string][]int) {
+func prepareAllColumnsInOnePlaceNoJSON() (*Postgresql, map[string][]telegraf.Metric) {
 	oneMetric, _ := metric.New("m", map[string]string{"t": "tv"}, map[string]interface{}{"f": 1}, time.Now())
 	twoMetric, _ := metric.New("m", map[string]string{"t2": "tv2"}, map[string]interface{}{"f2": 2}, time.Now())
 	threeMetric, _ := metric.New("m", map[string]string{"t": "tv", "t2": "tv2"}, map[string]interface{}{"f": 3, "f2": 4}, time.Now())
@@ -76,15 +44,12 @@ func prepareAllColumnsInOnePlaceNoJSON() (*Postgresql, []telegraf.Metric, map[st
 			rows:            &mockTransformer{rows: [][]interface{}{nil, nil, nil}},
 			columns:         columns.NewMapper(false, false, false),
 			db:              &mockDb{},
-			dbConnLock:      sync.Mutex{},
-		}, []telegraf.Metric{
-			oneMetric, twoMetric, threeMetric,
-		}, map[string][]int{
-			"m": {0, 1, 2},
+		} , map[string][]telegraf.Metric{
+			"m": {oneMetric, twoMetric, threeMetric},
 		}
 }
 
-func prepareAllColumnsInOnePlaceTagsAndFieldsJSON() (*Postgresql, []telegraf.Metric, map[string][]int) {
+func prepareAllColumnsInOnePlaceTagsAndFieldsJSON() (*Postgresql,  map[string][]telegraf.Metric) {
 	oneMetric, _ := metric.New("m", map[string]string{"t": "tv"}, map[string]interface{}{"f": 1}, time.Now())
 	twoMetric, _ := metric.New("m", map[string]string{"t2": "tv2"}, map[string]interface{}{"f2": 2}, time.Now())
 	threeMetric, _ := metric.New("m", map[string]string{"t": "tv", "t2": "tv2"}, map[string]interface{}{"f": 3, "f2": 4}, time.Now())
@@ -95,15 +60,12 @@ func prepareAllColumnsInOnePlaceTagsAndFieldsJSON() (*Postgresql, []telegraf.Met
 			TagsAsForeignkeys: false,
 			TagsAsJsonb:       true,
 			FieldsAsJsonb:     true,
-			dbConnLock:        sync.Mutex{},
 			tables:            &mockTables{t: map[string]bool{"m": true}, missingCols: []int{}},
 			columns:           columns.NewMapper(false, true, true),
 			rows:              &mockTransformer{rows: [][]interface{}{nil, nil, nil}},
 			db:                &mockDb{},
-		}, []telegraf.Metric{
-			oneMetric, twoMetric, threeMetric,
-		}, map[string][]int{
-			"m": {0, 1, 2},
+		}, map[string][]telegraf.Metric{
+			"m": {oneMetric, twoMetric, threeMetric},
 		}
 }
 
@@ -115,23 +77,22 @@ type mockTables struct {
 	addColsErr  error
 }
 
-func (m *mockTables) Exists(tableName string) bool {
+func (m *mockTables) Exists(db db.Wrapper,tableName string) bool {
 	return m.t[tableName]
 }
-func (m *mockTables) CreateTable(tableName string, colDetails *utils.TargetColumns, tagTable bool) error {
+func (m *mockTables) CreateTable(db db.Wrapper, tableName string, colDetails *utils.TargetColumns, tagTable bool) error {
 	if m.createErr != nil {
 		return m.createErr
 	}
 	m.t[tableName] = true
 	return nil
 }
-func (m *mockTables) FindColumnMismatch(tableName string, colDetails *utils.TargetColumns) ([]int, error) {
+func (m *mockTables) FindColumnMismatch(db db.Wrapper, tableName string, colDetails *utils.TargetColumns) ([]int, error) {
 	return m.missingCols, m.mismatchErr
 }
-func (m *mockTables) AddColumnsToTable(tableName string, columnIndices []int, colDetails *utils.TargetColumns) error {
+func (m *mockTables) AddColumnsToTable(db db.Wrapper, tableName string, columnIndices []int, colDetails *utils.TargetColumns) error {
 	return m.addColsErr
 }
-func (m *mockTables) SetConnection(db db.Wrapper) {}
 
 type mockTransformer struct {
 	rows    [][]interface{}
@@ -139,7 +100,7 @@ type mockTransformer struct {
 	rowErr  error
 }
 
-func (mt *mockTransformer) createRowFromMetric(numColumns int, metric telegraf.Metric, targetColumns, targetTagColumns *utils.TargetColumns) ([]interface{}, error) {
+func (mt *mockTransformer) createRowFromMetric(db db.Wrapper, numColumns int, metric telegraf.Metric, targetColumns, targetTagColumns *utils.TargetColumns) ([]interface{}, error) {
 	if mt.rowErr != nil {
 		return nil, mt.rowErr
 	}

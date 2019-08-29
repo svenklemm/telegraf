@@ -53,10 +53,10 @@ func (p *Postgresql) Connect() error {
 		return err
 	}
 	p.db = dbWrapper
-	p.tables = tables.NewManager(p.db, p.Schema, p.TableTemplate)
+	p.tables = tables.NewManager(p.Schema, p.TableTemplate)
 
 	if p.TagsAsForeignkeys {
-		p.tagCache = newTagsCache(p.CachedTagsetsPerMeasurement, p.TagsAsJsonb, p.TagTableSuffix, p.Schema, p.db)
+		p.tagCache = newTagsCache(p.CachedTagsetsPerMeasurement, p.TagsAsJsonb, p.TagTableSuffix, p.Schema)
 	}
 	p.rows = newRowTransformer(p.TagsAsForeignkeys, p.TagsAsJsonb, p.FieldsAsJsonb, p.tagCache)
 	p.columns = columns.NewMapper(p.TagsAsForeignkeys, p.TagsAsJsonb, p.FieldsAsJsonb)
@@ -166,7 +166,7 @@ func (p *Postgresql) writeMetricsFromMeasure(measureName string, metrics []teleg
 	values := make([][]interface{}, len(metrics))
 	var rowTransformErr error
 	for rowNum, metric := range metrics {
-		values[rowNum], rowTransformErr = p.rows.createRowFromMetric(numColumns, metric, targetColumns, targetTagColumns)
+		values[rowNum], rowTransformErr = p.rows.createRowFromMetric(p.db, numColumns, metric, targetColumns, targetTagColumns)
 		if rowTransformErr != nil {
 			return fmt.Errorf("E! Could not transform metric to proper row\n%v", rowTransformErr)
 		}
@@ -179,20 +179,20 @@ func (p *Postgresql) writeMetricsFromMeasure(measureName string, metrics []teleg
 // Checks if a table exists in the db, and then validates if all the required columns
 // are present or some are missing (if metrics changed their field or tag sets).
 func (p *Postgresql) prepareTable(tableName string, details *utils.TargetColumns, tagTable bool) error {
-	tableExists := p.tables.Exists(tableName)
+	tableExists := p.tables.Exists(p.db,tableName)
 
 	if !tableExists {
-		return p.tables.CreateTable(tableName, details, tagTable)
+		return p.tables.CreateTable(p.db, tableName, details, tagTable)
 	}
 
-	missingColumns, err := p.tables.FindColumnMismatch(tableName, details)
+	missingColumns, err := p.tables.FindColumnMismatch(p.db,tableName, details)
 	if err != nil {
 		return err
 	}
 	if len(missingColumns) == 0 {
 		return nil
 	}
-	return p.tables.AddColumnsToTable(tableName, missingColumns, details)
+	return p.tables.AddColumnsToTable(p.db,tableName, missingColumns, details)
 }
 
 func (p *Postgresql) checkConnection() bool {
@@ -202,10 +202,6 @@ func (p *Postgresql) checkConnection() bool {
 func (p *Postgresql) resetConnection() error {
 	var err error
 	p.db, err = db.NewWrapper(p.Connection)
-	p.tables.SetConnection(p.db)
-	if p.tagCache != nil {
-		p.tagCache.setDb(p.db)
-	}
 	if err != nil {
 		return fmt.Errorf("E! Could not reset connection:\n%v", err)
 	}
