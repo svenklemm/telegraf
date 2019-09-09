@@ -284,11 +284,11 @@ func TestWriteToPostgresMultipleMetrics(t *testing.T) {
 func TestPerformanceIsAcceptable(t *testing.T) {
 	_, db, postgres := prepareAndConnect(t, false)
 	defer db.Close()
-	numMetricsPerMeasure := 10000
+	numMetricsPerMeasure := 100000
 	numTags := 5
 	numDiffValuesForEachTag := 5
 	numFields := 10
-	numMeasures := 2
+	numMeasures := 1
 	metrics := make([]telegraf.Metric, numMeasures*numMetricsPerMeasure)
 	for measureInd := 0; measureInd < numMeasures; measureInd++ {
 		for numMetric := 0; numMetric < numMetricsPerMeasure; numMetric++ {

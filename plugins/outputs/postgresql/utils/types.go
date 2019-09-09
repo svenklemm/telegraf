@@ -1,6 +1,9 @@
 package utils
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/jackc/pgx"
+)
 
 // ColumnRole specifies the role of a column in a metric.
 // It helps map the columns to the DB.
@@ -49,4 +52,40 @@ type TargetColumns struct {
 
 func (t *TargetColumns) String() string {
 	return fmt.Sprintf("{Names:%v, Target: %v, DataTypes: %v, Roles: %v", t.Names, t.Target, t.DataTypes, t.Roles)
+}
+
+// DecodedPgError tells us what happened when executing a PG query
+type DecodedPgError int
+
+// ColumnRole available values.
+const (
+	PgErrorMissingColumn DecodedPgError = iota + 1
+	PgErrorMissingTable
+	PgErrorUnknown
+)
+
+// ErrorBundle combines the pg code and the actual error.
+type ErrorBundle struct {
+	Code DecodedPgError
+	Err  error
+}
+
+// DecodePgError attempts to discover if an error was a PgError
+// and decode it.
+func DecodePgError(err error) *ErrorBundle {
+	pgErr, ok := err.(pgx.PgError)
+	if !ok {
+		return &ErrorBundle{PgErrorUnknown, err}
+	}
+	var code DecodedPgError
+	switch pgErr.Code {
+	case "42703":
+		code = PgErrorMissingColumn
+	case "42P01":
+		code = PgErrorMissingTable
+	default:
+		code = PgErrorUnknown
+	}
+
+	return &ErrorBundle{code, err}
 }

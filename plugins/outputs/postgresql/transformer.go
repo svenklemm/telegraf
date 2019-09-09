@@ -7,7 +7,11 @@ import (
 )
 
 type transformer interface {
-	createRowFromMetric(db db.Wrapper, numColumns int, metric telegraf.Metric, targetColumns, targetTagColumns *utils.TargetColumns) ([]interface{}, error)
+	createRowFromMetric(
+		db db.Wrapper,
+		numColumns int,
+		metric telegraf.Metric,
+		targetColumns, targetTagColumns *utils.TargetColumns) ([]interface{}, *utils.ErrorBundle)
 }
 
 type defTransformer struct {
@@ -23,8 +27,12 @@ func newRowTransformer(tagsAsFK bool, tagsCache tagsCache) transformer {
 }
 
 func (dt *defTransformer) createRowFromMetric(
-	db db.Wrapper, numColumns int, metric telegraf.Metric, targetColumns, targetTagColumns *utils.TargetColumns,
-) ([]interface{}, error) {
+	db db.Wrapper,
+	numColumns int,
+	metric telegraf.Metric,
+	targetColumns,
+	targetTagColumns *utils.TargetColumns,
+) ([]interface{}, *utils.ErrorBundle) {
 	row := make([]interface{}, numColumns)
 	// handle time
 	row[0] = metric.Time()
@@ -32,7 +40,7 @@ func (dt *defTransformer) createRowFromMetric(
 	if dt.tagsAsFK {
 		tagID, err := dt.tagsCache.getTagID(db, targetTagColumns, metric)
 		if err != nil {
-			return nil, err
+			return nil, utils.DecodePgError(err)
 		}
 		row[1] = tagID
 	} else {

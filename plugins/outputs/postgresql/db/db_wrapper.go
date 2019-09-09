@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 
 	"github.com/jackc/pgx"
 	// pgx driver for sql connections
@@ -13,7 +14,7 @@ const checkConnQuery = "SELECT 1"
 // Wrapper defines an interface that encapsulates communication with a DB.
 type Wrapper interface {
 	Exec(query string, args ...interface{}) (pgx.CommandTag, error)
-	DoCopy(fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) error
+	DoCopy(fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) *utils.ErrorBundle
 	Query(query string, args ...interface{}) (*pgx.Rows, error)
 	QueryRow(query string, args ...interface{}) *pgx.Row
 	Close() error
@@ -45,11 +46,14 @@ func (d *defaultDbWrapper) Exec(query string, args ...interface{}) (pgx.CommandT
 	return d.db.Exec(query, args...)
 }
 
-func (d *defaultDbWrapper) DoCopy(fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) error {
+func (d *defaultDbWrapper) DoCopy(
+	fullTableName *pgx.Identifier,
+	colNames []string,
+	batch [][]interface{}) *utils.ErrorBundle {
 	source := pgx.CopyFromRows(batch)
 	_, err := d.db.CopyFrom(*fullTableName, colNames, source)
 	if err != nil {
-		return fmt.Errorf("E! Could not insert batch of rows in output db\n%v",err)
+		return utils.DecodePgError(err)
 	}
 
 	return nil

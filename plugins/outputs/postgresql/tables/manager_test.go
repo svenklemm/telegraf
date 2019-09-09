@@ -18,7 +18,7 @@ type mockDb struct {
 func (m *mockDb) Exec(query string, args ...interface{}) (pgx.CommandTag, error) {
 	return m.exec, m.execErr
 }
-func (m *mockDb) DoCopy(fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) error {
+func (m *mockDb) DoCopy(fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) *utils.ErrorBundle {
 	return nil
 }
 func (m *mockDb) Query(query string, args ...interface{}) (*pgx.Rows, error) {

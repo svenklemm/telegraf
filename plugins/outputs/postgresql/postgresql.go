@@ -21,9 +21,9 @@ type Postgresql struct {
 	TableTemplate               string
 	TagTableSuffix              string
 
-	db         db.Wrapper
-	tables     tables.Manager
-	tagCache   tagsCache
+	db       db.Wrapper
+	tables   tables.Manager
+	tagCache tagsCache
 
 	rows    transformer
 	columns columns.Mapper
@@ -127,8 +127,7 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 	}
 	metricsByMeasurement := utils.GroupMetricsByMeasurement(metrics)
 	for measureName, groupedMetrics := range metricsByMeasurement {
-		err := p.writeMetricsFromMeasure(measureName, groupedMetrics)
-		if err != nil {
+		if err := p.writeMetricsFromMeasure(measureName, groupedMetrics); err != nil {
 			return err
 		}
 	}
@@ -142,49 +141,61 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 func (p *Postgresql) writeMetricsFromMeasure(measureName string, metrics []telegraf.Metric) error {
 	targetColumns, targetTagColumns := p.columns.Target(metrics)
 
-	if p.DoSchemaUpdates {
-		tagTable := true
-		if err := p.prepareTable(measureName, targetColumns, !tagTable); err != nil {
-			return err
-		}
-		if p.TagsAsForeignkeys {
-			tagTableName := p.tagCache.tagsTableName(measureName)
-			if err := p.prepareTable(tagTableName, targetTagColumns, tagTable); err != nil {
-				return err
-			}
-		}
-	}
 	numColumns := len(targetColumns.Names)
 	values := make([][]interface{}, len(metrics))
-	var rowTransformErr error
+	var rowTransformErr *utils.ErrorBundle
 	for rowNum, metric := range metrics {
 		values[rowNum], rowTransformErr = p.rows.createRowFromMetric(p.db, numColumns, metric, targetColumns, targetTagColumns)
+		if rowTransformErr == nil {
+			continue
+		}
+
+		tagsTable := p.tagCache.tagsTableName(measureName)
+		err := p.attemptRecovery(tagsTable, targetTagColumns, rowTransformErr, true)
+		if err != nil {
+			return err
+		}
+		values[rowNum], rowTransformErr = p.rows.createRowFromMetric(p.db, numColumns, metric, targetColumns, targetTagColumns)
 		if rowTransformErr != nil {
-			return fmt.Errorf("E! Could not transform metric to proper row\n%v", rowTransformErr)
+			return rowTransformErr.Err
 		}
 	}
 
 	fullTableName := utils.FullTableName(p.Schema, measureName)
-	return p.db.DoCopy(fullTableName, targetColumns.Names, values)
+	doCopy := func() *utils.ErrorBundle { return p.db.DoCopy(fullTableName, targetColumns.Names, values) }
+	if err := doCopy(); err != nil {
+		if recoveryErr := p.attemptRecovery(measureName, targetColumns, err, false); recoveryErr != nil {
+			return recoveryErr
+		} else if err = doCopy(); err != nil {
+			return err.Err
+		}
+	}
+	return nil
 }
 
-// Checks if a table exists in the db, and then validates if all the required columns
-// are present or some are missing (if metrics changed their field or tag sets).
-func (p *Postgresql) prepareTable(tableName string, details *utils.TargetColumns, tagTable bool) error {
-	tableExists := p.tables.Exists(p.db,tableName)
-
-	if !tableExists {
-		return p.tables.CreateTable(p.db, tableName, details, tagTable)
+func (p *Postgresql) attemptRecovery(
+	tableName string,
+	details *utils.TargetColumns,
+	err *utils.ErrorBundle,
+	isTagTable bool) error {
+	if !p.DoSchemaUpdates {
+		return err.Err
+	}
+	switch err.Code {
+	case utils.PgErrorMissingTable:
+		return p.tables.CreateTable(p.db, tableName, details, isTagTable)
+	case utils.PgErrorMissingColumn:
+		missingColumns, err := p.tables.FindColumnMismatch(p.db, tableName, details)
+		if err != nil {
+			return err
+		}
+		if len(missingColumns) == 0 {
+			return nil
+		}
+		return p.tables.AddColumnsToTable(p.db, tableName, missingColumns, details)
 	}
 
-	missingColumns, err := p.tables.FindColumnMismatch(p.db,tableName, details)
-	if err != nil {
-		return err
-	}
-	if len(missingColumns) == 0 {
-		return nil
-	}
-	return p.tables.AddColumnsToTable(p.db,tableName, missingColumns, details)
+	return err.Err
 }
 
 func (p *Postgresql) checkConnection() bool {

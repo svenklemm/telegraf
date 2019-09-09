@@ -38,33 +38,33 @@ func prepareAllColumnsInOnePlaceNoJSON() (*Postgresql, map[string][]telegraf.Met
 	threeMetric, _ := metric.New("m", map[string]string{"t": "tv", "t2": "tv2"}, map[string]interface{}{"f": 3, "f2": 4}, time.Now())
 
 	return &Postgresql{
-			TagTableSuffix:  "_tag",
-			DoSchemaUpdates: true,
-			tables:          &mockTables{t: map[string]bool{"m": true}, missingCols: []int{}},
-			rows:            &mockTransformer{rows: [][]interface{}{nil, nil, nil}},
-			columns:         columns.NewMapper(false),
-			db:              &mockDb{},
-		} , map[string][]telegraf.Metric{
-			"m": {oneMetric, twoMetric, threeMetric},
-		}
+		TagTableSuffix:  "_tag",
+		DoSchemaUpdates: true,
+		tables:          &mockTables{t: map[string]bool{"m": true}, missingCols: []int{}},
+		rows:            &mockTransformer{rows: [][]interface{}{nil, nil, nil}},
+		columns:         columns.NewMapper(false),
+		db:              &mockDb{},
+	}, map[string][]telegraf.Metric{
+		"m": {oneMetric, twoMetric, threeMetric},
+	}
 }
 
-func prepareAllColumnsInOnePlaceTagsAndFieldsJSON() (*Postgresql,  map[string][]telegraf.Metric) {
+func prepareAllColumnsInOnePlaceTagsAndFieldsJSON() (*Postgresql, map[string][]telegraf.Metric) {
 	oneMetric, _ := metric.New("m", map[string]string{"t": "tv"}, map[string]interface{}{"f": 1}, time.Now())
 	twoMetric, _ := metric.New("m", map[string]string{"t2": "tv2"}, map[string]interface{}{"f2": 2}, time.Now())
 	threeMetric, _ := metric.New("m", map[string]string{"t": "tv", "t2": "tv2"}, map[string]interface{}{"f": 3, "f2": 4}, time.Now())
 
 	return &Postgresql{
-			TagTableSuffix:    "_tag",
-			DoSchemaUpdates:   true,
-			TagsAsForeignkeys: false,
-			tables:            &mockTables{t: map[string]bool{"m": true}, missingCols: []int{}},
-			columns:           columns.NewMapper(false),
-			rows:              &mockTransformer{rows: [][]interface{}{nil, nil, nil}},
-			db:                &mockDb{},
-		}, map[string][]telegraf.Metric{
-			"m": {oneMetric, twoMetric, threeMetric},
-		}
+		TagTableSuffix:    "_tag",
+		DoSchemaUpdates:   true,
+		TagsAsForeignkeys: false,
+		tables:            &mockTables{t: map[string]bool{"m": true}, missingCols: []int{}},
+		columns:           columns.NewMapper(false),
+		rows:              &mockTransformer{rows: [][]interface{}{nil, nil, nil}},
+		db:                &mockDb{},
+	}, map[string][]telegraf.Metric{
+		"m": {oneMetric, twoMetric, threeMetric},
+	}
 }
 
 type mockTables struct {
@@ -75,7 +75,7 @@ type mockTables struct {
 	addColsErr  error
 }
 
-func (m *mockTables) Exists(db db.Wrapper,tableName string) bool {
+func (m *mockTables) Exists(db db.Wrapper, tableName string) bool {
 	return m.t[tableName]
 }
 func (m *mockTables) CreateTable(db db.Wrapper, tableName string, colDetails *utils.TargetColumns, tagTable bool) error {
@@ -98,9 +98,14 @@ type mockTransformer struct {
 	rowErr  error
 }
 
-func (mt *mockTransformer) createRowFromMetric(db db.Wrapper, numColumns int, metric telegraf.Metric, targetColumns, targetTagColumns *utils.TargetColumns) ([]interface{}, error) {
+func (mt *mockTransformer) createRowFromMetric(
+	db db.Wrapper,
+	numColumns int,
+	metric telegraf.Metric,
+	targetColumns,
+	targetTagColumns *utils.TargetColumns) ([]interface{}, *utils.ErrorBundle) {
 	if mt.rowErr != nil {
-		return nil, mt.rowErr
+		return nil, &utils.ErrorBundle{utils.PgErrorUnknown,mt.rowErr}
 	}
 	row := mt.rows[mt.current]
 	mt.current++
@@ -118,8 +123,8 @@ func (m *mockDb) Exec(query string, args ...interface{}) (pgx.CommandTag, error)
 	return "", nil
 }
 
-func (m *mockDb) DoCopy(fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) error {
-	return m.doCopyErr
+func (m *mockDb) DoCopy(fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) *utils.ErrorBundle {
+	return &utils.ErrorBundle{utils.PgErrorUnknown, m.doCopyErr}
 }
 func (m *mockDb) Query(query string, args ...interface{}) (*pgx.Rows, error) {
 	return nil, nil
