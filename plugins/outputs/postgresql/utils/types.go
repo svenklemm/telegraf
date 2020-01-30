@@ -27,4 +27,6 @@ type TargetColumns struct {
 	DataTypes []PgDataType
 	// the role each column has, helps properly map the metric to the db
 	Roles []ColumnRole
+	// whether these are columns that belong to a tag table or a metrics table
+	TagTable bool
 }

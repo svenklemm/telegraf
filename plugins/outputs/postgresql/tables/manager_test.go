@@ -11,11 +11,13 @@ import (
 )
 
 type mockDb struct {
-	exec    pgx.CommandTag
-	execErr error
+	queriesSentToExec []string
+	exec              pgx.CommandTag
+	execErr           error
 }
 
 func (m *mockDb) Exec(query string, args ...interface{}) (pgx.CommandTag, error) {
+	m.queriesSentToExec = append(m.queriesSentToExec, query)
 	return m.exec, m.execErr
 }
 func (m *mockDb) DoCopy(fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) error {
@@ -35,9 +37,10 @@ func (m *mockDb) IsAlive() bool { return true }
 
 func TestNewManager(t *testing.T) {
 	db := &mockDb{}
-	res := NewManager(db, "schema", "table template").(*defTableManager)
+	res := NewManager(db, "schema", "table template", "tag table template").(*defTableManager)
 	assert.Equal(t, "table template", res.tableTemplate)
 	assert.Equal(t, "schema", res.schema)
+	assert.Equal(t, "tag table template", res.tagTableTemplate)
 	assert.Equal(t, db, res.db)
 }
 
@@ -90,12 +93,14 @@ func TestExists(t *testing.T) {
 
 func TestCreateTable(t *testing.T) {
 	testCases := []struct {
-		desc     string
-		inT      string
-		inCD     *utils.TargetColumns
-		db       db.Wrapper
-		template string
-		out      error
+		desc         string
+		inT          string
+		inCD         *utils.TargetColumns
+		db           db.Wrapper
+		template     string
+		tagTempalate string
+		expectQ      string
+		out          error
 	}{
 		{
 			desc: "error on exec, no table cached",
@@ -107,7 +112,7 @@ func TestCreateTable(t *testing.T) {
 				Roles:     []utils.ColumnRole{utils.TimeColType, utils.TagColType, utils.FieldColType},
 			},
 			db:       &mockDb{execErr: errors.New("error on exec")},
-			template: "CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS}) ",
+			template: "CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS})",
 			out:      errors.New("error on exec"),
 		}, {
 			desc: "all good, table is cached",
@@ -119,22 +124,41 @@ func TestCreateTable(t *testing.T) {
 				Roles:     []utils.ColumnRole{utils.TimeColType, utils.TagColType, utils.FieldColType},
 			},
 			db:       &mockDb{},
-			template: "CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS}) ",
+			template: "CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS})",
+			expectQ:  `CREATE TABLE IF NOT EXISTS "t"("time" timestamptz,"t" text,"f" float8)`,
 			out:      nil,
+		}, {
+			desc: "all is good, tag table",
+			inT:  "t",
+			inCD: &utils.TargetColumns{
+				Names:     []string{"tagId", "t", "t2"},
+				Target:    map[string]int{"tagId": 0, "t": 1, "t2": 2},
+				DataTypes: []utils.PgDataType{"serial", "text", "text"},
+				Roles:     []utils.ColumnRole{utils.TagsIDColType, utils.TagColType, utils.TagColType},
+				TagTable:  true,
+			},
+			tagTempalate: "CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS})",
+			expectQ:      `CREATE TABLE IF NOT EXISTS "t"("tagId" serial,"t" text,"t2" text)`,
+			db:           &mockDb{},
+			out:          nil,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			manager := &defTableManager{
-				Tables:        map[string]bool{},
-				db:            tc.db,
-				tableTemplate: tc.template,
+				Tables:           map[string]bool{},
+				db:               tc.db,
+				tableTemplate:    tc.template,
+				tagTableTemplate: tc.tagTempalate,
 			}
 			got := manager.CreateTable(tc.inT, tc.inCD)
 			assert.Equal(t, tc.out, got)
 			if tc.out == nil {
 				assert.True(t, manager.Tables[tc.inT])
+			}
+			if tc.expectQ != "" {
+				assert.Equal(t, tc.expectQ, tc.db.(*mockDb).queriesSentToExec[0])
 			}
 		})
 	}

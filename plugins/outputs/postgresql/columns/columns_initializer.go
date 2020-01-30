@@ -57,6 +57,7 @@ func tagsAsFKAndJSONAndFieldsAsJSONInit() (*utils.TargetColumns, *utils.TargetCo
 			DataTypes: []utils.PgDataType{TagIDColumnDataTypeAsPK, JSONColumnDataType},
 			Target:    map[string]int{TagIDColumnName: 0, TagsJSONColumn: 1},
 			Roles:     []utils.ColumnRole{utils.TagsIDColType, utils.TagColType},
+			TagTable:  true,
 		}
 }
 
@@ -71,6 +72,7 @@ func tagsAsFKAndJSONInit() (*utils.TargetColumns, *utils.TargetColumns) {
 			DataTypes: []utils.PgDataType{TagIDColumnDataTypeAsPK, JSONColumnDataType},
 			Target:    map[string]int{TagIDColumnName: 0, TagsJSONColumn: 1},
 			Roles:     []utils.ColumnRole{utils.TagsIDColType, utils.FieldColType},
+			TagTable:  true,
 		}
 }
 
@@ -85,6 +87,7 @@ func tagsAsFKFieldsAsJSONInit() (*utils.TargetColumns, *utils.TargetColumns) {
 			DataTypes: []utils.PgDataType{TagIDColumnDataTypeAsPK},
 			Target:    map[string]int{TagIDColumnName: 0},
 			Roles:     []utils.ColumnRole{utils.TagsIDColType},
+			TagTable:  true,
 		}
 }
 
@@ -99,6 +102,7 @@ func tagsAsFKInit() (*utils.TargetColumns, *utils.TargetColumns) {
 			DataTypes: []utils.PgDataType{TagIDColumnDataTypeAsPK},
 			Target:    map[string]int{TagIDColumnName: 0},
 			Roles:     []utils.ColumnRole{utils.TagsIDColType},
+			TagTable:  true,
 		}
 }
 

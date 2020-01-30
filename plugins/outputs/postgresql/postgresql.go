@@ -12,6 +12,10 @@ import (
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 )
 
+const (
+	tagTableTemplate = "CREATE TABLE IF NOT EXISTS {TABLE}({COLUMNS})"
+)
+
 type Postgresql struct {
 	Connection                  string
 	Schema                      string
@@ -59,7 +63,7 @@ func (p *Postgresql) Connect() error {
 		return err
 	}
 	p.db = db
-	p.tables = tables.NewManager(p.db, p.Schema, p.TableTemplate)
+	p.tables = tables.NewManager(p.db, p.Schema, p.TableTemplate, tagTableTemplate)
 
 	if p.TagsAsForeignkeys {
 		p.tagCache = newTagsCache(p.CachedTagsetsPerMeasurement, p.TagsAsJsonb, p.TagTableSuffix, p.Schema, p.db)

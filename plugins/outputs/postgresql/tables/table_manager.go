@@ -43,20 +43,22 @@ type Manager interface {
 }
 
 type defTableManager struct {
-	Tables        map[string]bool
-	db            db.Wrapper
-	schema        string
-	tableTemplate string
+	Tables           map[string]bool
+	db               db.Wrapper
+	schema           string
+	tableTemplate    string
+	tagTableTemplate string
 }
 
 // NewManager returns an instance of the tables.Manager interface
 // that can handle checking and updating the state of tables in the PG database.
-func NewManager(db db.Wrapper, schema, tableTemplate string) Manager {
+func NewManager(db db.Wrapper, schema, tableTemplate, tagTableTemplate string) Manager {
 	return &defTableManager{
-		Tables:        make(map[string]bool),
-		db:            db,
-		tableTemplate: tableTemplate,
-		schema:        schema,
+		Tables:           make(map[string]bool),
+		db:               db,
+		tableTemplate:    tableTemplate,
+		schema:           schema,
+		tagTableTemplate: tagTableTemplate,
 	}
 }
 
@@ -160,8 +162,12 @@ func (t *defTableManager) generateCreateTableSQL(tableName string, colDetails *u
 		}
 	}
 
+	var sqlTemplate = t.tableTemplate
+	if colDetails.TagTable {
+		sqlTemplate = t.tagTableTemplate
+	}
 	fullTableName := utils.FullTableName(t.schema, tableName).Sanitize()
-	query := strings.Replace(t.tableTemplate, "{TABLE}", fullTableName, -1)
+	query := strings.Replace(sqlTemplate, "{TABLE}", fullTableName, -1)
 	query = strings.Replace(query, "{TABLELITERAL}", utils.QuoteLiteral(fullTableName), -1)
 	query = strings.Replace(query, "{COLUMNS}", strings.Join(colDefs, ","), -1)
 	query = strings.Replace(query, "{KEY_COLUMNS}", strings.Join(pk, ","), -1)
