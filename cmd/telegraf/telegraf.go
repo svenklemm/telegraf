@@ -69,11 +69,11 @@ var fPlugins = flag.String("plugin-directory", "",
 	"path to directory containing external plugins")
 
 var (
-	version string
 	commit  string
 	branch  string
 )
 
+const version = "1.13.0-with-pg"
 var stop chan struct{}
 
 func reloadLoop(

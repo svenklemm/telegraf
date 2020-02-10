@@ -146,15 +146,13 @@ func PgTypeCanContain(canThis PgDataType, containThis PgDataType) bool {
 
 // GenerateInsert returns a SQL statement to insert values in a table
 // with $X placeholders for the values
-func GenerateInsert(fullSanitizedTableName string, columns []string) string {
-	valuePlaceholders := make([]string, len(columns))
+func GenerateInsert(fullSanitizedTableName string, columns, values []string) string {
 	quotedColumns := make([]string, len(columns))
 	for i, column := range columns {
-		valuePlaceholders[i] = fmt.Sprintf("$%d", i+1)
 		quotedColumns[i] = QuoteIdent(column)
 	}
 
 	columnNames := strings.Join(quotedColumns, ",")
-	values := strings.Join(valuePlaceholders, ",")
-	return fmt.Sprintf(insertIntoSQLTemplate, fullSanitizedTableName, columnNames, values)
+	transValues := strings.Join(values, ",")
+	return fmt.Sprintf(insertIntoSQLTemplate, fullSanitizedTableName, columnNames, transValues)
 }

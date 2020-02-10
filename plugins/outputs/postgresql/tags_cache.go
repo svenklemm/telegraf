@@ -2,14 +2,13 @@ package postgresql
 
 import (
 	"fmt"
+	"github.com/jackc/pgx"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/golang/groupcache/lru"
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/columns"
-	"github.com/influxdata/telegraf/plugins/outputs/postgresql/db"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
 )
 
@@ -21,9 +20,8 @@ const (
 // from the database (used only when TagsAsForeignKey property selected).
 // Also caches the LRU tagIDs
 type tagsCache interface {
-	getTagID(target *utils.TargetColumns, metric telegraf.Metric) (int, error)
+	getTagID(tx *pgx.Tx, target *utils.TargetColumns, metric telegraf.Metric) (int, error)
 	tagsTableName(measureName string) string
-	setDb(db db.Wrapper)
 }
 
 type defTagsCache struct {
@@ -31,31 +29,25 @@ type defTagsCache struct {
 	tagsAsJSONb    bool
 	tagTableSuffix string
 	schema         string
-	db             db.Wrapper
 	itemsToCache   int
 }
 
 // newTagsCache returns a new implementation of the tags cache interface with LRU memoization
-func newTagsCache(numItemsInCachePerMetric int, tagsAsJSONb bool, tagTableSuffix, schema string, db db.Wrapper) tagsCache {
+func newTagsCache(numItemsInCachePerMetric int, tagsAsJSONb bool, tagTableSuffix, schema string) tagsCache {
 	return &defTagsCache{
 		cache:          map[string]*lru.Cache{},
 		tagsAsJSONb:    tagsAsJSONb,
 		tagTableSuffix: tagTableSuffix,
 		schema:         schema,
-		db:             db,
 		itemsToCache:   numItemsInCachePerMetric,
 	}
-}
-
-func (c *defTagsCache) setDb(db db.Wrapper) {
-	c.db = db
 }
 
 // Checks the cache for the tag set of the metric, if present returns immediately.
 // Otherwise asks the database if that tag set has already been recorded.
 // If not recorded, inserts a new row to the tags table for the specific measurement.
 // Re-caches the tagID after checking the DB.
-func (c *defTagsCache) getTagID(target *utils.TargetColumns, metric telegraf.Metric) (int, error) {
+func (c *defTagsCache) getTagID(tx *pgx.Tx, target *utils.TargetColumns, metric telegraf.Metric) (int, error) {
 	measureName := metric.Name()
 	tags := metric.Tags()
 	cacheKey := constructCacheKey(tags)
@@ -65,29 +57,34 @@ func (c *defTagsCache) getTagID(target *utils.TargetColumns, metric telegraf.Met
 	}
 
 	var whereParts []string
-	var whereValues []interface{}
+	var values []string
 	if c.tagsAsJSONb {
-		whereParts = []string{utils.QuoteIdent(columns.TagsJSONColumn) + "= $1"}
 		numTags := len(tags)
+		var x string
 		if numTags > 0 {
 			d, err := utils.BuildJsonb(tags)
 			if err != nil {
 				return tagID, err
 			}
-			whereValues = []interface{}{d}
+			x = "'" + string(d) + "'"
+			values = []string{x}
 		} else {
-			whereValues = []interface{}{nil}
+			x = " IS NULL"
+			values = []string{"NULL"}
 		}
+
+		whereParts = []string{utils.QuoteIdent(columns.TagsJSONColumn) + "= " + x}
 	} else {
 		whereParts = make([]string, len(target.Names)-1)
-		whereValues = make([]interface{}, len(target.Names)-1)
+		values = make([]string, len(target.Names)-1)
 		whereIndex := 1
 		for columnIndex, tagName := range target.Names[1:] {
 			if val, ok := tags[tagName]; ok {
-				whereParts[columnIndex] = utils.QuoteIdent(tagName) + " = $" + strconv.Itoa(whereIndex)
-				whereValues[whereIndex-1] = val
+				whereParts[columnIndex] = utils.QuoteIdent(tagName) + " = '" + val + "'"
+				values[columnIndex] = "'" + val + "'"
 			} else {
 				whereParts[whereIndex-1] = tagName + " IS NULL"
+				values[columnIndex] = "NULL"
 			}
 			whereIndex++
 		}
@@ -97,7 +94,7 @@ func (c *defTagsCache) getTagID(target *utils.TargetColumns, metric telegraf.Met
 	tagsTableFullName := utils.FullTableName(c.schema, tagsTableName).Sanitize()
 	// SELECT tag_id FROM measure_tag WHERE t1 = v1 AND ... tN = vN
 	query := fmt.Sprintf(selectTagIDTemplate, tagsTableFullName, strings.Join(whereParts, " AND "))
-	err := c.db.QueryRow(query, whereValues...).Scan(&tagID)
+	err := tx.QueryRow(query).Scan(&tagID)
 	// tag set found in DB, cache it and return
 	if err == nil {
 		c.addToCache(measureName, cacheKey, tagID)
@@ -105,8 +102,8 @@ func (c *defTagsCache) getTagID(target *utils.TargetColumns, metric telegraf.Met
 	}
 
 	// tag set is new, insert it, and cache the tagID
-	query = utils.GenerateInsert(tagsTableFullName, target.Names[1:]) + " RETURNING " + columns.TagIDColumnName
-	err = c.db.QueryRow(query, whereValues...).Scan(&tagID)
+	query = utils.GenerateInsert(tagsTableFullName, target.Names[1:], values) + " RETURNING " + columns.TagIDColumnName
+	err = tx.QueryRow(query).Scan(&tagID)
 	if err == nil {
 		c.addToCache(measureName, cacheKey, tagID)
 	}

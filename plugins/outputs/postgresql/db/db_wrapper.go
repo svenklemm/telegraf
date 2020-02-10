@@ -12,11 +12,8 @@ const checkConnQuery = "SELECT 1"
 
 // Wrapper defines an interface that encapsulates communication with a DB.
 type Wrapper interface {
-	Exec(query string, args ...interface{}) (pgx.CommandTag, error)
-	DoCopy(fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) error
-	Query(query string, args ...interface{}) (*pgx.Rows, error)
-	QueryRow(query string, args ...interface{}) *pgx.Row
 	Close() error
+	Begin() (*pgx.Tx, error)
 	IsAlive() bool
 }
 
@@ -28,6 +25,7 @@ type defaultDbWrapper struct {
 // that issues queries to a PG database.
 func NewWrapper(connection string) (Wrapper, error) {
 	connConfig, err := parseConnectionString(connection)
+	connConfig.PreferSimpleProtocol = true
 	if err != nil {
 		return nil, err
 	}
@@ -42,28 +40,13 @@ func NewWrapper(connection string) (Wrapper, error) {
 	}, nil
 }
 
-func (d *defaultDbWrapper) Exec(query string, args ...interface{}) (pgx.CommandTag, error) {
-	return d.db.Exec(query, args...)
+func (d *defaultDbWrapper) Begin() (*pgx.Tx, error) {
+	return d.db.Begin()
 }
-
-func (d *defaultDbWrapper) DoCopy(fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) error {
-	source := pgx.CopyFromRows(batch)
-	_, err := d.db.CopyFrom(*fullTableName, colNames, source)
-	if err != nil {
-		log.Printf("E! Could not insert batch of rows in output db\n%v", err)
-	}
-
-	return err
-}
-
 func (d *defaultDbWrapper) Close() error { return d.db.Close() }
 
-func (d *defaultDbWrapper) Query(query string, args ...interface{}) (*pgx.Rows, error) {
-	return d.db.Query(query, args...)
-}
-
-func (d *defaultDbWrapper) QueryRow(query string, args ...interface{}) *pgx.Row {
-	return d.db.QueryRow(query, args...)
+func (d *defaultDbWrapper) Query(tx *pgx.Tx, query string, args ...interface{}) (*pgx.Rows, error) {
+	return tx.Query(query, args...)
 }
 
 func (d *defaultDbWrapper) IsAlive() bool {

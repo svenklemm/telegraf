@@ -1,15 +1,15 @@
 package postgresql
 
 import (
-	"log"
-	"sync"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/columns"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/db"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/tables"
 	"github.com/influxdata/telegraf/plugins/outputs/postgresql/utils"
+	"github.com/jackc/pgx"
+	"github.com/pkg/errors"
+	"log"
 )
 
 const (
@@ -29,10 +29,9 @@ type Postgresql struct {
 
 	// lock for the assignment of the dbWrapper,
 	// table manager and tags cache
-	dbConnLock sync.Mutex
-	db         db.Wrapper
-	tables     tables.Manager
-	tagCache   tagsCache
+	db       db.Wrapper
+	tables   tables.Manager
+	tagCache tagsCache
 
 	rows    transformer
 	columns columns.Mapper
@@ -54,19 +53,16 @@ func newPostgresql() *Postgresql {
 
 // Connect establishes a connection to the target database and prepares the cache
 func (p *Postgresql) Connect() error {
-	p.dbConnLock.Lock()
-	defer p.dbConnLock.Unlock()
-
 	// set p.db with a lock
 	db, err := db.NewWrapper(p.Connection)
 	if err != nil {
 		return err
 	}
 	p.db = db
-	p.tables = tables.NewManager(p.db, p.Schema, p.TableTemplate, tagTableTemplate)
+	p.tables = tables.NewManager(p.Schema, p.TableTemplate, tagTableTemplate)
 
 	if p.TagsAsForeignkeys {
-		p.tagCache = newTagsCache(p.CachedTagsetsPerMeasurement, p.TagsAsJsonb, p.TagTableSuffix, p.Schema, p.db)
+		p.tagCache = newTagsCache(p.CachedTagsetsPerMeasurement, p.TagsAsJsonb, p.TagTableSuffix, p.Schema)
 	}
 	p.rows = newRowTransformer(p.TagsAsForeignkeys, p.TagsAsJsonb, p.FieldsAsJsonb, p.tagCache)
 	p.columns = columns.NewMapper(p.TagsAsForeignkeys, p.TagsAsJsonb, p.FieldsAsJsonb)
@@ -75,8 +71,6 @@ func (p *Postgresql) Connect() error {
 
 // Close closes the connection to the database
 func (p *Postgresql) Close() error {
-	p.dbConnLock.Lock()
-	defer p.dbConnLock.Unlock()
 	p.tagCache = nil
 	p.tables = nil
 	return p.db.Close()
@@ -163,66 +157,95 @@ func (p *Postgresql) Write(metrics []telegraf.Metric) error {
 // to hold the new values.
 func (p *Postgresql) writeMetricsFromMeasure(measureName string, metricIndices []int, metrics []telegraf.Metric) error {
 	targetColumns, targetTagColumns := p.columns.Target(metricIndices, metrics)
+	tx, err := p.db.Begin()
+	if err != nil {
+		log.Printf("E! Could not open a transaction to the db\n %v", err)
+		return err
+	}
 
 	if p.DoSchemaUpdates {
-		if err := p.prepareTable(measureName, targetColumns); err != nil {
-			return err
+		if err := p.prepareTable(tx, measureName, targetColumns); err != nil {
+			return rollback(tx, err.Error())
 		}
 		if p.TagsAsForeignkeys {
 			tagTableName := p.tagCache.tagsTableName(measureName)
-			if err := p.prepareTable(tagTableName, targetTagColumns); err != nil {
-				return err
+			if err := p.prepareTable(tx, tagTableName, targetTagColumns); err != nil {
+				return rollback(tx, err.Error())
 			}
 		}
+	}
+	err = tx.Commit()
+	if err != nil {
+		log.Printf("E! Could not commit tx to prepare tables\n%v", err)
+		return err
+	}
+	tx, err = p.db.Begin()
+	if err != nil {
+		log.Printf("E! Could not open a transaction to the db\n %v", err)
+		return err
 	}
 	numColumns := len(targetColumns.Names)
 	values := make([][]interface{}, len(metricIndices))
 	var rowTransformErr error
 	for rowNum, metricIndex := range metricIndices {
-		values[rowNum], rowTransformErr = p.rows.createRowFromMetric(numColumns, metrics[metricIndex], targetColumns, targetTagColumns)
+		values[rowNum], rowTransformErr = p.rows.createRowFromMetric(tx, numColumns, metrics[metricIndex], targetColumns, targetTagColumns)
 		if rowTransformErr != nil {
 			log.Printf("E! Could not transform metric to proper row\n%v", rowTransformErr)
-			return rowTransformErr
+			return rollback(tx, rowTransformErr.Error())
 		}
 	}
 
 	fullTableName := utils.FullTableName(p.Schema, measureName)
-	return p.db.DoCopy(fullTableName, targetColumns.Names, values)
+	err = doCopy(tx, fullTableName, targetColumns.Names, values)
+	if err != nil {
+		return rollback(tx, err.Error())
+	}
+	return tx.Commit()
+}
+
+func rollback(tx *pgx.Tx, errStr string) error {
+	if err := tx.Rollback(); err != nil {
+		log.Printf("E! Could not rollback transaction\n %v", err)
+		return errors.Wrap(err, errStr)
+	}
+	return nil
+}
+
+func doCopy(tx *pgx.Tx, fullTableName *pgx.Identifier, colNames []string, batch [][]interface{}) error {
+	source := pgx.CopyFromRows(batch)
+	_, err := tx.CopyFrom(*fullTableName, colNames, source)
+	if err != nil {
+		log.Printf("E! Could not insert batch of rows in output db\n%v", err)
+	}
+
+	return err
 }
 
 // Checks if a table exists in the db, and then validates if all the required columns
 // are present or some are missing (if metrics changed their field or tag sets).
-func (p *Postgresql) prepareTable(tableName string, details *utils.TargetColumns) error {
-	tableExists := p.tables.Exists(tableName)
+func (p *Postgresql) prepareTable(tx *pgx.Tx, tableName string, details *utils.TargetColumns) error {
+	tableExists := p.tables.Exists(tx, tableName)
 
 	if !tableExists {
-		return p.tables.CreateTable(tableName, details)
+		return p.tables.CreateTable(tx, tableName, details)
 	}
 
-	missingColumns, err := p.tables.FindColumnMismatch(tableName, details)
+	missingColumns, err := p.tables.FindColumnMismatch(tx, tableName, details)
 	if err != nil {
 		return err
 	}
 	if len(missingColumns) == 0 {
 		return nil
 	}
-	return p.tables.AddColumnsToTable(tableName, missingColumns, details)
+	return p.tables.AddColumnsToTable(tx, tableName, missingColumns, details)
 }
 
 func (p *Postgresql) checkConnection() bool {
-	p.dbConnLock.Lock()
-	defer p.dbConnLock.Unlock()
 	return p.db != nil && p.db.IsAlive()
 }
 
 func (p *Postgresql) resetConnection() error {
-	p.dbConnLock.Lock()
-	defer p.dbConnLock.Unlock()
 	var err error
 	p.db, err = db.NewWrapper(p.Connection)
-	p.tables.SetConnection(p.db)
-	if p.tagCache != nil {
-		p.tagCache.setDb(p.db)
-	}
 	return err
 }
