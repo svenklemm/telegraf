@@ -87,7 +87,7 @@ func (c *defTagsCache) getTagID(target *utils.TargetColumns, metric telegraf.Met
 				whereParts[columnIndex] = utils.QuoteIdent(tagName) + " = $" + strconv.Itoa(whereIndex)
 				whereValues[whereIndex-1] = val
 			} else {
-				whereParts[whereIndex-1] = tagName + " IS NULL"
+				whereParts[whereIndex-1] = utils.QuoteIdent(tagName) + " IS NULL"
 			}
 			whereIndex++
 		}
